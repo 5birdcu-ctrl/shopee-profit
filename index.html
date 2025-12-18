@@ -1,11 +1,395 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8">
-  <title>เว็บแรกของฉัน</title>
+<meta charset="UTF-8">
+<title>Shopee Profit Dashboard</title>
+
+<!-- Lib -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+<!-- Font -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+body{
+  font-family:"Noto Sans Thai",sans-serif;
+  margin:0;background:#f9fafb
+}
+.topbar{
+  position:sticky;top:0;z-index:1000;
+  background:#fff;padding:12px;
+  display:flex;gap:10px;align-items:center;
+  border-bottom:1px solid #ddd;
+}
+.box{background:#fff;margin:16px;padding:12px;border-radius:8px}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #ddd;padding:6px;font-size:13px}
+th{background:#f3f4f6}
+.hidden{display:none}
+.profit{color:green;font-weight:bold}
+.loss{color:red;font-weight:bold}
+#statusBox{background:#eef2ff;font-weight:600}
+</style>
 </head>
+
 <body>
-  <h1>สวัสดี ลองดู ลองดู Web 🌐</h1>
-  <p>เว็บนี้แก้ไขผ่าน GitHub ล้วน ๆ</p>
+
+<!-- ===== TOP BAR ===== -->
+<div class="topbar">
+  <input type="file" id="fileInput" multiple accept=".xlsx">
+  <button onclick="showTab('orders')">📄 Orders</button>
+  <button onclick="showTab('summary')">📊 Summary</button>
+  <button onclick="showTab('cost')">📦 Cost</button>
+
+  <select id="yearFilter" onchange="applyFilter()"></select>
+  <select id="monthFilter" onchange="applyFilter()">
+    <option value="">ทั้งปี</option>
+    <option value="01">ม.ค.</option><option value="02">ก.พ.</option>
+    <option value="03">มี.ค.</option><option value="04">เม.ย.</option>
+    <option value="05">พ.ค.</option><option value="06">มิ.ย.</option>
+    <option value="07">ก.ค.</option><option value="08">ส.ค.</option>
+    <option value="09">ก.ย.</option><option value="10">ต.ค.</option>
+    <option value="11">พ.ย.</option><option value="12">ธ.ค.</option>
+  </select>
+</div>
+
+<div id="statusBox" class="box">⏳ พร้อมอัปโหลดไฟล์</div>
+
+<!-- ===== ORDERS ===== -->
+<div id="orders" class="box">
+<h3>📄 Orders</h3>
+<table>
+<thead>
+<tr>
+<th>Order</th><th>วันที่</th><th>สินค้า</th>
+<th>ยอดขาย</th><th>ต้นทุน</th><th>ค่าธรรมเนียม</th>
+<th>กำไร</th><th>%</th>
+</tr>
+</thead>
+<tbody id="orderTable"></tbody>
+</table>
+</div>
+
+<!-- ===== COST ===== -->
+<div id="cost" class="box hidden">
+<h3>📦 ต้นทุนสินค้า</h3>
+<table>
+<thead>
+<tr><th>SKU</th><th>สินค้า</th><th>ต้นทุน/ชิ้น</th><th></th></tr>
+</thead>
+<tbody id="costTable"></tbody>
+</table>
+</div>
+
+<!-- ===== SUMMARY ===== -->
+<div id="summary" class="box hidden">
+<h3>📊 Summary</h3>
+
+<p><b>รายได้สุทธิ (หลังหักค่าธรรมเนียม):</b>
+  <span id="netRevenue">0</span> บาท
+</p>
+
+<p><b>กำไร (หลังหักต้นทุน):</b>
+  <span id="yearProfit">0</span> บาท
+</p>
+
+<h4>📅 กำไรรายเดือน</h4>
+<table>
+<thead>
+<tr><th>เดือน</th><th>กำไร (บาท)</th></tr>
+</thead>
+<tbody id="monthlyTable"></tbody>
+</table>
+
+<h4>🏆 สินค้ากำไรสูงสุด 10 อันดับ</h4>
+<canvas id="topProductChart" height="120"></canvas>
+
+</div>
+
+<script>
+// ===== Firebase =====
+firebase.initializeApp({
+apiKey: "AIzaSyBKjYmmVyGIbVojmwwnHGAzGwdPXfUPX3U",
+  authDomain: "shopee-profit-app.firebaseapp.com",
+  projectId: "shopee-profit-app"
+});
+const db = firebase.firestore();
+
+// ===== Utils =====
+function showTab(id){
+  ["orders","cost","summary"].forEach(t=>document.getElementById(t).classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+}
+function setStatus(msg){
+  document.getElementById("statusBox").textContent = msg;
+}
+function hashSKU(str){
+  let h=0; for(let c of str) h=((h<<5)-h)+c.charCodeAt(0);
+  return "SKU_"+Math.abs(h);
+}
+
+let productChart=null;
+
+function renderSummary(){
+  renderMonthlySummary();
+  renderTopProducts();
+}
+
+function renderMonthlySummary(){
+  const map={};
+
+  filteredOrders.forEach(o=>{
+    if(!o.month)return;
+    map[o.month]=(map[o.month]||0)+o.profit;
+  });
+
+  monthlyTable.innerHTML=Object.entries(map)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([m,v])=>`
+      <tr>
+        <td>${m}</td>
+        <td class="${v<0?'loss':'profit'}">${v.toFixed(2)}</td>
+      </tr>
+    `).join("");
+}
+
+function renderTopProducts(){
+  const map={};
+
+  filteredOrders.forEach(o=>{
+    if(!o.items)return;
+    o.items.split(",").forEach(name=>{
+      map[name]=(map[name]||0)+o.profit;
+    });
+  });
+
+  const top=Object.entries(map)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,10);
+
+  const labels=top.map(x=>x[0]);
+  const data=top.map(x=>x[1]);
+
+  if(productChart) productChart.destroy();
+
+  productChart=new Chart(
+    document.getElementById("topProductChart"),
+    {
+      type:"bar",
+      data:{
+        labels,
+        datasets:[{
+          data,
+          backgroundColor:data.map(v=>v>=0?"#16a34a":"#dc2626")
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false}},
+        scales:{y:{beginAtZero:true}}
+      }
+    }
+  );
+}
+
+
+// ===== State =====
+let orders=[], filteredOrders=[], costMap={}, productMap={};
+
+// ===== Load Costs =====
+async function loadCosts(){
+  costMap={};
+  const snap=await db.collection("products").get();
+  snap.forEach(d=>costMap[d.id]=d.data().cost||0);
+}
+
+// ===== Load Orders =====
+async function loadOrders(){
+  orders=[];
+  const snap=await db.collection("orders").get();
+  snap.forEach(d=>{
+  const o=d.data();
+  o.percent = typeof o.percent==="number" ? o.percent : 0;
+  orders.push(o);
+});
+
+  buildYearFilter();
+  applyFilter();
+}
+
+// ===== Upload =====
+fileInput.onchange = async e=>{
+  try{
+    setStatus("📂 โหลดต้นทุนสินค้า...");
+    await loadCosts();
+
+    for(const file of e.target.files){
+      setStatus(`📄 อ่านไฟล์ ${file.name}`);
+      await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=async ev=>{
+          try{
+            const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+            const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            if(!rows.length){ resolve(); return; }
+
+            const map={};
+
+            rows.forEach(r=>{
+              const oid=r["หมายเลขคำสั่งซื้อ"];
+              if(!oid) return;
+              if(!map[oid]){
+                map[oid]={oid,date:r["วันที่ทำการสั่งซื้อ"],gross:0,cost:0,fee:0,items:[]};
+              }
+              const sku=hashSKU((r["ชื่อสินค้า"]||"")+"|"+(r["ชื่อตัวเลือก"]||""));
+              const qty=Number(r["จำนวน"])||1;
+              const price=Number(r["ราคาขาย"])||0;
+
+              map[oid].gross += price*qty;
+              map[oid].cost  += (costMap[sku]||0)*qty;
+              map[oid].fee   += Number(r["ค่าคอมมิชชั่น"]||0)
+                              + Number(r["Transaction Fee"]||0)
+                              + Number(r["ค่าบริการ"]||0);
+
+              map[oid].items.push(`${r["ชื่อสินค้า"]} x${qty}`);
+              productMap[sku]={name:r["ชื่อสินค้า"]};
+            });
+
+            let saved=0, skipped=0;
+            for(const o of Object.values(map)){
+              const ref=db.collection("orders").doc(o.oid);
+              const snap=await ref.get();
+              if(snap.exists){ skipped++; continue; }
+
+              const profit=o.gross-o.cost-o.fee;
+              await ref.set({
+                orderId:o.oid,
+                date:o.date,
+                month:o.date?.slice(0,7),
+                gross:o.gross,
+                cost:o.cost,
+                fee:o.fee,
+                profit,
+                percent:o.gross?((profit/o.gross)*100):0,
+                items:o.items.join(", "),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              });
+              saved++;
+            }
+            setStatus(`✅ ${file.name}: บันทึก ${saved} | ข้ามซ้ำ ${skipped}`);
+            resolve();
+          }catch(err){
+            console.error(err);
+            setStatus("❌ เกิดข้อผิดพลาด (ดู Console)");
+            reject(err);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    await loadOrders();
+    renderCost();
+
+  }catch(err){
+    console.error(err);
+    setStatus("❌ Upload ล้มเหลว");
+  }
+};
+
+// ===== Render =====
+function renderOrders(){
+  orderTable.innerHTML = filteredOrders.map(o=>`
+  <tr>
+    <td>${o.orderId}</td>
+    <td>${o.date}</td>
+    <td>${o.items ?? ""}</td>
+    <td>${o.gross}</td>
+    <td>${o.cost}</td>
+    <td>${o.fee}</td>
+    <td class="${o.profit<0?'loss':'profit'}">${o.profit}</td>
+    <td>${typeof o.percent==="number" ? o.percent.toFixed(2) : "0.00"}%</td>
+  </tr>`).join("");
+}
+function renderCost(){
+  costTable.innerHTML = Object.entries(productMap).map(([id,p])=>`
+  <tr>
+    <td>${id}</td><td>${p.name}</td>
+    <td><input data-id="${id}" value="${costMap[id]||""}"></td>
+    <td><button onclick="saveCost('${id}')">บันทึก</button></td>
+  </tr>`).join("");
+}
+async function saveCost(id){
+  const v=Number(document.querySelector(`[data-id="${id}"]`).value);
+  await db.collection("products").doc(id).set({cost:v});
+  costMap[id]=v;
+  alert("บันทึกแล้ว");
+}
+
+async function fixMissingPercent(){
+  const snap = await db.collection("orders").get();
+  for(const d of snap.docs){
+    const o = d.data();
+    if(o.percent === undefined){
+      const percent = o.gross ? ((o.profit / o.gross) * 100) : 0;
+      await d.ref.update({ percent });
+    }
+  }
+  console.log("✅ Fixed missing percent");
+}
+
+
+// ===== Filter & Summary =====
+function applyFilter(){
+  const y = yearFilter.value,
+        m = monthFilter.value;
+
+  filteredOrders = orders.filter(o => {
+    // ❌ ตัด document ที่ไม่มี items
+    if (!o.items) return false;
+
+    if (y && !o.date?.startsWith(y)) return false;
+    if (m && o.date?.slice(5,7) !== m) return false;
+
+    return true;
+  });
+
+  renderOrders();
+  calcYearProfit();
+  calcNetRevenue();
+  renderSummary();
+}
+
+function buildYearFilter(){
+  const years=[...new Set(orders.map(o=>o.date?.slice(0,4)).filter(Boolean))];
+  yearFilter.innerHTML='<option value="">ทุกปี</option>'+years.map(y=>`<option>${y}</option>`).join("");
+}
+function calcYearProfit(){
+  yearProfit.textContent = filteredOrders.reduce((a,b)=>a+b.profit,0).toFixed(2);
+}
+
+function calcNetRevenue(){
+  const net = filteredOrders.reduce((sum,o)=>{
+    const gross = Number(o.gross) || 0;
+    const fee   = Number(o.fee)   || 0;
+    return sum + (gross - fee);
+  },0);
+
+  document.getElementById("netRevenue").textContent = net.toFixed(2);
+}
+
+
+
+// ===== Init =====
+loadCosts();
+loadOrders();
+fixMissingPercent();
+
+</script>
+
 </body>
 </html>
