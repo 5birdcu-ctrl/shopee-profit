@@ -1,0 +1,93 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // This dashboard currently has one owner and the existing documents do
+    // not contain ownerId/shopId. Access is therefore restricted to the
+    // verified Google account used to administer this dashboard.
+    function isOwner() {
+      return request.auth != null
+        && request.auth.uid == 'SCIQFlg8UyX1dJkhacSQLA10JcE3'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidProduct() {
+      return request.resource.data.keys().hasOnly(['name', 'cost'])
+        && request.resource.data.keys().hasAll(['cost'])
+        && request.resource.data.cost is number
+        && request.resource.data.cost >= 0
+        && request.resource.data.cost <= 1000000000
+        && (!('name' in request.resource.data)
+          || (request.resource.data.name is string
+            && request.resource.data.name.size() <= 500));
+    }
+
+    function isValidOrder() {
+      return request.resource.data.keys().hasOnly([
+          'orderId', 'date', 'month', 'gross', 'cost', 'fee',
+          'profit', 'percent', 'items', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'orderId', 'date', 'month', 'gross', 'cost', 'fee',
+          'profit', 'percent', 'items'
+        ])
+        && request.resource.data.orderId is string
+        && request.resource.data.orderId.size() > 0
+        && request.resource.data.orderId.size() <= 200
+        && request.resource.data.date is string
+        && request.resource.data.date.size() <= 32
+        && request.resource.data.month is string
+        && (request.resource.data.month == ''
+          || request.resource.data.month.matches('^\\d{4}-\\d{2}$'))
+        && request.resource.data.gross is number
+        && request.resource.data.gross >= 0
+        && request.resource.data.gross <= 1000000000000
+        && request.resource.data.cost is number
+        && request.resource.data.cost >= 0
+        && request.resource.data.cost <= 1000000000000
+        && request.resource.data.fee is number
+        && request.resource.data.fee >= 0
+        && request.resource.data.fee <= 1000000000000
+        && request.resource.data.profit is number
+        && request.resource.data.profit >= -1000000000000
+        && request.resource.data.profit <= 1000000000000
+        && request.resource.data.percent is number
+        && request.resource.data.percent >= -100000000
+        && request.resource.data.percent <= 100000000
+        && request.resource.data.items is string
+        && request.resource.data.items.size() <= 5000
+        && (!('createdAt' in request.resource.data)
+          || request.resource.data.createdAt is timestamp);
+    }
+
+    function orderIdentityUnchanged() {
+      return request.resource.data.orderId == resource.data.orderId;
+    }
+
+    function createdAtUnchanged() {
+      return !('createdAt' in resource.data)
+        || ('createdAt' in request.resource.data
+          && request.resource.data.createdAt == resource.data.createdAt);
+    }
+
+    match /products/{productId} {
+      allow read: if isOwner();
+      allow create, update: if isOwner() && isValidProduct();
+      allow delete: if isOwner();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isOwner();
+      allow create: if isOwner() && isValidOrder();
+      allow update: if isOwner()
+        && isValidOrder()
+        && orderIdentityUnchanged()
+        && createdAtUnchanged();
+      allow delete: if isOwner();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
