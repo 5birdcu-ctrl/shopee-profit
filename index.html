@@ -13,6 +13,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;600&display=swap" rel="stylesheet">
 
@@ -58,7 +59,42 @@ th { background: #f3f4f6; }
 .empty-row { color: #6b7280; text-align: center; }
 .cost-input { width: 130px; padding: 4px; }
 .cost-save { padding: 4px 8px; }
+.cost-name { min-width: 260px; white-space: normal; overflow-wrap: anywhere; }
 .auth-help { color: #6b7280; font-size: 13px; }
+.pdf-report {
+  position: absolute;
+  left: -1400px;
+  top: 0;
+  width: 1120px;
+  padding: 28px;
+  background: #fff;
+  color: #111827;
+  font-family: "Noto Sans Thai", sans-serif;
+}
+.pdf-report h1, .pdf-report h2 { margin: 0 0 8px; }
+.pdf-report h2 { margin-top: 24px; font-size: 18px; }
+.pdf-period { color: #4b5563; margin: 0 0 20px; }
+.pdf-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.pdf-summary-card { border: 1px solid #dbe3ef; border-radius: 8px; padding: 10px; }
+.pdf-summary-card span { display: block; color: #4b5563; font-size: 12px; }
+.pdf-summary-card strong { display: block; margin-top: 4px; font-size: 17px; }
+.pdf-report table { table-layout: fixed; }
+.pdf-report th, .pdf-report td { font-size: 10px; padding: 5px; overflow-wrap: anywhere; }
+.pdf-report .pdf-order-id { width: 17%; }
+.pdf-report .pdf-date { width: 10%; }
+.pdf-report .pdf-items { width: 31%; }
+.pdf-report .pdf-number { width: 10.5%; text-align: right; }
+@media print {
+  body > * { display: none !important; }
+  #appShell { display: block !important; }
+  #appShell > * { display: none !important; }
+  #pdfReport {
+    display: block !important;
+    position: static;
+    left: auto;
+    width: auto;
+  }
+}
 @media (max-width: 720px) {
   .user-area { margin-left: 0; width: 100%; }
   .box { margin: 10px; overflow-x: auto; }
@@ -81,6 +117,7 @@ th { background: #f3f4f6; }
     <button type="button" data-tab="orders">📄 Orders</button>
     <button type="button" data-tab="summary">📊 Summary</button>
     <button type="button" data-tab="cost">📦 Cost</button>
+    <button id="exportPdfButton" type="button">🧾 Export PDF</button>
 
     <select id="yearFilter" aria-label="กรองปี"></select>
     <select id="monthFilter" aria-label="กรองเดือน">
@@ -140,13 +177,42 @@ th { background: #f3f4f6; }
     <h4>🏆 สินค้ากำไรสูงสุด 10 อันดับ</h4>
     <canvas id="topProductChart" height="120"></canvas>
   </section>
+
+  <section id="pdfReport" class="pdf-report" aria-hidden="true">
+    <h1 id="pdfTitle">Shopee Profit Report</h1>
+    <p id="pdfPeriod" class="pdf-period"></p>
+    <div class="pdf-summary-grid">
+      <div class="pdf-summary-card"><span>ยอดขาย</span><strong id="pdfGross">0.00</strong></div>
+      <div class="pdf-summary-card"><span>ต้นทุน</span><strong id="pdfCost">0.00</strong></div>
+      <div class="pdf-summary-card"><span>ค่าธรรมเนียม</span><strong id="pdfFee">0.00</strong></div>
+      <div class="pdf-summary-card"><span>กำไร</span><strong id="pdfProfit">0.00</strong></div>
+    </div>
+    <h2>กำไรรายเดือน</h2>
+    <table>
+      <thead><tr><th>เดือน</th><th class="number">กำไร (บาท)</th></tr></thead>
+      <tbody id="pdfMonthlyTable"></tbody>
+    </table>
+    <h2>รายการ Orders</h2>
+    <table>
+      <thead>
+        <tr>
+          <th class="pdf-order-id">Order</th><th class="pdf-date">วันที่</th><th class="pdf-items">สินค้า</th>
+          <th class="pdf-number">ยอดขาย</th><th class="pdf-number">ต้นทุน</th>
+          <th class="pdf-number">ค่าธรรมเนียม</th><th class="pdf-number">กำไร</th>
+        </tr>
+      </thead>
+      <tbody id="pdfOrderTable"></tbody>
+    </table>
+  </section>
 </main>
 
 <script type="module">
 import {
   aggregateRows,
+  buildReportModel,
   filterOrders,
   normalizeOrder,
+  parseSpreadsheetRows,
   summarizeOrders,
   toNumber,
 } from "./src/app-core.js";
@@ -182,6 +248,15 @@ const netRevenue = document.getElementById("netRevenue");
 const yearProfit = document.getElementById("yearProfit");
 const monthlyTable = document.getElementById("monthlyTable");
 const chartCanvas = document.getElementById("topProductChart");
+const exportPdfButton = document.getElementById("exportPdfButton");
+const pdfReport = document.getElementById("pdfReport");
+const pdfPeriod = document.getElementById("pdfPeriod");
+const pdfGross = document.getElementById("pdfGross");
+const pdfCost = document.getElementById("pdfCost");
+const pdfFee = document.getElementById("pdfFee");
+const pdfProfit = document.getElementById("pdfProfit");
+const pdfMonthlyTable = document.getElementById("pdfMonthlyTable");
+const pdfOrderTable = document.getElementById("pdfOrderTable");
 
 let orders = [];
 let filteredOrders = [];
@@ -261,7 +336,7 @@ function renderCost() {
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.className = "empty-row";
-    cell.textContent = "ยังไม่มีข้อมูลสินค้า กรุณาอัปโหลดไฟล์ก่อน";
+    cell.textContent = "ยังไม่มีข้อมูลสินค้า กรุณาอัปโหลดไฟล์ Orders เพื่อเติมชื่อและต้นทุน";
     row.appendChild(cell);
     costTable.appendChild(row);
     return;
@@ -270,7 +345,11 @@ function renderCost() {
   for (const [sku, product] of entries) {
     const row = document.createElement("tr");
     addCell(row, sku);
-    addCell(row, product.name || "ไม่ระบุสินค้า");
+    const nameCell = document.createElement("td");
+    nameCell.className = "cost-name";
+    nameCell.textContent = product.displayName || product.name || "ไม่ระบุสินค้า";
+    nameCell.title = nameCell.textContent;
+    row.appendChild(nameCell);
 
     const inputCell = document.createElement("td");
     const input = document.createElement("input");
@@ -370,6 +449,7 @@ async function loadCosts() {
     nextCostMap[document.id] = toNumber(data.cost);
     nextProductMap[document.id] = {
       name: String(data.name ?? "ไม่ระบุสินค้า"),
+      displayName: String(data.displayName ?? data.name ?? "ไม่ระบุสินค้า"),
       cost: nextCostMap[document.id],
     };
   });
@@ -416,8 +496,34 @@ function readWorkbook(file) {
           type: "array",
           cellDates: true,
         });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        resolve(sheet ? window.XLSX.utils.sheet_to_json(sheet, { defval: "" }) : []);
+        const parsedSheets = workbook.SheetNames.map((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          const matrix = sheet
+            ? window.XLSX.utils.sheet_to_json(sheet, {
+              header: 1,
+              defval: "",
+              raw: true,
+            })
+            : [];
+          return {
+            ...parseSpreadsheetRows(matrix),
+            sheetName,
+          };
+        });
+        const best = parsedSheets
+          .sort((a, b) => {
+            if (Boolean(b.rows.length) !== Boolean(a.rows.length)) {
+              return Number(Boolean(b.rows.length)) - Number(Boolean(a.rows.length));
+            }
+            return b.rows.length - a.rows.length;
+          })[0];
+        resolve(best || {
+          rows: [],
+          headers: [],
+          hasOrderId: false,
+          profile: "unknown",
+          sheetName: "",
+        });
       } catch (error) {
         reject(error);
       }
@@ -429,13 +535,14 @@ function readWorkbook(file) {
 
 async function saveProducts(products) {
   for (const [sku, product] of Object.entries(products)) {
-    const payload = { name: product.name };
+    const fullName = String(product.displayName || product.name || "ไม่ระบุสินค้า");
+    const payload = { name: fullName };
     if (!(sku in costMap)) {
       payload.cost = 0;
       costMap[sku] = 0;
     }
     await db.collection("products").doc(sku).set(payload, { merge: true });
-    productMap[sku] = { name: product.name, cost: costMap[sku] };
+    productMap[sku] = { name: fullName, displayName: fullName, cost: costMap[sku] };
   }
 }
 
@@ -444,31 +551,39 @@ function orderDocumentId(orderId) {
 }
 
 async function saveOrders(newOrders) {
-  let saved = 0;
-  let skipped = 0;
-  for (const order of newOrders) {
-    const reference = db.collection("orders").doc(orderDocumentId(order.oid));
-    const existing = await reference.get();
-    if (existing.exists) {
-      skipped += 1;
-      continue;
-    }
-
-    await reference.set({
-      orderId: order.oid,
-      date: order.date,
-      month: order.month,
-      gross: order.gross,
-      cost: order.cost,
-      fee: order.fee,
-      profit: order.profit,
-      percent: order.percent,
-      items: order.items,
-      createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+  const references = newOrders.map((order) => ({
+    order,
+    reference: db.collection("orders").doc(orderDocumentId(order.oid)),
+  }));
+  const existingIds = new Set();
+  for (let start = 0; start < references.length; start += 100) {
+    const chunk = references.slice(start, start + 100);
+    const snapshots = await Promise.all(chunk.map(({ reference }) => reference.get()));
+    snapshots.forEach((snapshot, index) => {
+      if (snapshot.exists) existingIds.add(chunk[index].order.oid);
     });
-    saved += 1;
   }
-  return { saved, skipped };
+
+  const pending = references.filter(({ order }) => !existingIds.has(order.oid));
+  for (let start = 0; start < pending.length; start += 400) {
+    const batch = db.batch();
+    pending.slice(start, start + 400).forEach(({ order, reference }) => {
+      batch.set(reference, {
+        orderId: order.oid,
+        date: order.date,
+        month: order.month,
+        gross: order.gross,
+        cost: order.cost,
+        fee: order.fee,
+        profit: order.profit,
+        percent: order.percent,
+        items: order.items,
+        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+  }
+  return { saved: pending.length, skipped: existingIds.size };
 }
 
 async function uploadFiles(event) {
@@ -480,16 +595,26 @@ async function uploadFiles(event) {
     await loadCosts();
     for (const file of files) {
       setStatus(`📄 กำลังอ่านไฟล์ ${file.name}...`);
-      const rows = await readWorkbook(file);
-      if (!rows.length) {
-        setStatus(`⚠️ ${file.name} ไม่มีข้อมูล`);
+      const parsed = await readWorkbook(file);
+      if (!parsed.rows.length) {
+        const hint = parsed.headers.length
+          ? `หัวตารางที่พบ: ${parsed.headers.slice(0, 6).join(", ")}`
+          : "ไม่พบหัวตารางที่รู้จัก";
+        setStatus(`❌ ${file.name}: ไม่พบรายการออเดอร์ (${hint})`, true);
         continue;
       }
 
-      const result = aggregateRows(rows, costMap);
+      const result = aggregateRows(parsed.rows, costMap);
+      if (!result.orders.length) {
+        setStatus(`❌ ${file.name}: ไม่พบหมายเลขคำสั่งซื้อที่ใช้ได้`, true);
+        continue;
+      }
       await saveProducts(result.products);
       const outcome = await saveOrders(result.orders);
-      setStatus(`✅ ${file.name}: บันทึก ${outcome.saved} | ข้ามซ้ำ ${outcome.skipped}`);
+      const note = parsed.profile === "income" && !Object.keys(result.products).length
+        ? " | ไฟล์ Income ไม่มีชื่อสินค้า ใช้ไฟล์ Orders เพื่อเติมชื่อใน Cost"
+        : "";
+      setStatus(`✅ ${file.name}: บันทึก ${outcome.saved} | ข้ามซ้ำ ${outcome.skipped}${note}`);
     }
     await loadCosts();
     await loadOrders();
@@ -499,6 +624,88 @@ async function uploadFiles(event) {
   } finally {
     fileInput.disabled = false;
     fileInput.value = "";
+  }
+}
+
+function appendReportRow(table, values, classes = []) {
+  const row = document.createElement("tr");
+  values.forEach((value, index) => addCell(row, value, classes[index] || ""));
+  table.appendChild(row);
+}
+
+function renderPdfReport(report) {
+  const { year, month } = report.filters;
+  const period = month ? `${year || "ทุกปี"} / ${month}` : (year || "ทุกปี");
+  pdfPeriod.textContent = `ช่วงข้อมูล: ${period} | รายการ ${report.orders.length} ออเดอร์`;
+  pdfGross.textContent = `${formatNumber(report.summary.gross)} บาท`;
+  pdfCost.textContent = `${formatNumber(report.summary.cost)} บาท`;
+  pdfFee.textContent = `${formatNumber(report.summary.fee)} บาท`;
+  pdfProfit.textContent = `${formatNumber(report.summary.profit)} บาท`;
+
+  pdfMonthlyTable.replaceChildren();
+  if (!report.monthly.length) {
+    appendReportRow(pdfMonthlyTable, ["ไม่มีข้อมูล", "-"]);
+  } else {
+    report.monthly.forEach(([reportMonth, profit]) => {
+      appendReportRow(pdfMonthlyTable, [reportMonth, formatNumber(profit)], ["", "number"]);
+    });
+  }
+
+  pdfOrderTable.replaceChildren();
+  report.orders.forEach((order) => {
+    appendReportRow(pdfOrderTable, [
+      order.orderId,
+      order.date,
+      order.items,
+      formatNumber(order.gross),
+      formatNumber(order.cost),
+      formatNumber(order.fee),
+      formatNumber(order.profit),
+    ], ["pdf-order-id", "pdf-date", "pdf-items", "pdf-number", "pdf-number", "pdf-number", "pdf-number"]);
+  });
+}
+
+async function exportPdf() {
+  const report = buildReportModel(orders, {
+    year: yearFilter.value,
+    month: monthFilter.value,
+  });
+  if (!report.orders.length) {
+    setStatus("❌ ยังไม่มีข้อมูลสำหรับ Export PDF", true);
+    return;
+  }
+
+  renderPdfReport(report);
+  exportPdfButton.disabled = true;
+  try {
+    if (typeof window.html2pdf !== "function") {
+      setStatus("⚠️ เครื่องมือ PDF โหลดไม่สำเร็จ กำลังเปิดหน้าพิมพ์แทน");
+      window.print();
+      return;
+    }
+
+    const period = report.filters.month
+      ? `${report.filters.year || "all"}-${report.filters.month}`
+      : (report.filters.year || "all");
+    await window.html2pdf().set({
+      margin: [8, 8, 8, 8],
+      filename: `shopee-profit-${period}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
+      pagebreak: { mode: ["css", "legacy"] },
+    }).from(pdfReport).save();
+    setStatus("✅ Export PDF เรียบร้อยแล้ว");
+  } catch (error) {
+    console.error(error);
+    setStatus(`❌ Export PDF ไม่สำเร็จ: ${error?.message || "เกิดข้อผิดพลาด"}`, true);
+  } finally {
+    exportPdfButton.disabled = false;
   }
 }
 
@@ -516,7 +723,7 @@ async function saveCost(sku, input) {
       cost: value,
     }, { merge: true });
     costMap[sku] = value;
-    productMap[sku] = { ...product, cost: value };
+    productMap[sku] = { ...product, displayName: product.displayName || product.name, cost: value };
     setStatus("✅ บันทึกต้นทุนแล้ว");
   } catch (error) {
     console.error(error);
@@ -565,6 +772,7 @@ signOutButton.addEventListener("click", () => auth.signOut().catch((error) => {
 }));
 
 fileInput.addEventListener("change", uploadFiles);
+exportPdfButton.addEventListener("click", exportPdf);
 yearFilter.addEventListener("change", applyFilter);
 monthFilter.addEventListener("change", applyFilter);
 document.querySelectorAll("[data-tab]").forEach((button) => {

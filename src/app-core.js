@@ -4,9 +4,199 @@ const PRODUCT_NAME_FIELD = "ชื่อสินค้า";
 const PRODUCT_OPTION_FIELD = "ชื่อตัวเลือก";
 const QUANTITY_FIELD = "จำนวน";
 const SALE_PRICE_FIELD = "ราคาขาย";
+const TRANSFER_FIELD = "จำนวนเงินทั้งหมดที่โอนแล้ว (฿)";
 const COMMISSION_FIELD = "ค่าคอมมิชชั่น";
 const TRANSACTION_FEE_FIELD = "Transaction Fee";
 const SERVICE_FEE_FIELD = "ค่าบริการ";
+
+const PRODUCT_ADJUSTMENT_FIELDS = [
+  "ส่วนลดสินค้าจากผู้ขาย",
+  "จำนวนเงินที่ทำการคืนให้ผู้ซื้อ",
+  "ส่วนลดสินค้าที่ออกโดย Shopee",
+  "โค้ดส่วนลดที่ออกโดยผู้ขาย",
+  "โค้ดส่วนลดร่วมที่ออกโดยผู้ขาย",
+  "Coins Cashback ที่สนับสนุนโดยผู้ขาย",
+  "Coins Cashback ร่วมที่สนับสนุนโดยผู้ขาย",
+];
+
+const HEADER_ALIASES = {
+  [ORDER_ID_FIELD]: [
+    "หมายเลขคำสั่งซื้อ",
+    "หมายเลขออเดอร์",
+    "เลขที่คำสั่งซื้อ",
+    "รหัสคำสั่งซื้อ",
+    "order id",
+    "orderid",
+    "order",
+  ],
+  [ORDER_DATE_FIELD]: [
+    "วันที่ทำการสั่งซื้อ",
+    "วันที่สั่งซื้อ",
+    "วันเวลาที่สั่งซื้อ",
+    "เวลาสั่งซื้อ",
+    "วันที่",
+    "order date",
+    "created at",
+  ],
+  [PRODUCT_NAME_FIELD]: [
+    "ชื่อสินค้า",
+    "ชื่อรายการ",
+    "รายการสินค้า",
+    "product",
+    "product name",
+    "item",
+    "item name",
+  ],
+  [PRODUCT_OPTION_FIELD]: [
+    "ชื่อตัวเลือก",
+    "ตัวเลือก",
+    "สินค้า/ตัวเลือก",
+    "variation",
+    "option",
+  ],
+  [QUANTITY_FIELD]: ["จำนวน", "จำนวนสินค้า", "qty", "quantity"],
+  [SALE_PRICE_FIELD]: [
+    "ราคาขาย",
+    "ราคาสินค้า",
+    "ยอดขาย",
+    "มูลค่าสินค้า",
+    "สินค้าราคาปกติ",
+    "price",
+    "sale price",
+    "amount",
+  ],
+  [TRANSFER_FIELD]: [
+    "จำนวนเงินทั้งหมดที่โอนแล้ว (฿)",
+    "จำนวนเงินที่โอนแล้ว",
+    "ยอดโอนสุทธิ",
+    "ยอดเงินโอน",
+    "payout",
+    "net payout",
+  ],
+  [COMMISSION_FIELD]: ["ค่าคอมมิชชั่น", "ค่าคอมมิชชัน", "commission"],
+  [TRANSACTION_FEE_FIELD]: [
+    "transaction fee",
+    "ค่าธรรมเนียมธุรกรรม",
+    "ค่าธรรมเนียมการทำธุรกรรม",
+    "ค่าธุรกรรมการชำระเงิน",
+  ],
+  [SERVICE_FEE_FIELD]: ["ค่าบริการ", "ค่าบริการอื่น", "service fee", "service"],
+  "ส่วนลดสินค้าจากผู้ขาย": ["ส่วนลดสินค้าจากผู้ขาย", "seller discount"],
+  "จำนวนเงินที่ทำการคืนให้ผู้ซื้อ": ["จำนวนเงินที่ทำการคืนให้ผู้ซื้อ", "refund"],
+  "ส่วนลดสินค้าที่ออกโดย Shopee": ["ส่วนลดสินค้าที่ออกโดย Shopee"],
+  "โค้ดส่วนลดที่ออกโดยผู้ขาย": ["โค้ดส่วนลดที่ออกโดยผู้ขาย"],
+  "โค้ดส่วนลดร่วมที่ออกโดยผู้ขาย": ["โค้ดส่วนลดร่วมที่ออกโดยผู้ขาย"],
+  "Coins Cashback ที่สนับสนุนโดยผู้ขาย": ["Coins Cashback ที่สนับสนุนโดยผู้ขาย"],
+  "Coins Cashback ร่วมที่สนับสนุนโดยผู้ขาย": ["Coins Cashback ร่วมที่สนับสนุนโดยผู้ขาย"],
+  "ค่าคอมมิชชั่น AMS": ["ค่าคอมมิชชั่น AMS", "ams commission"],
+  "ค่าธรรมเนียมโครงสร้างพื้นฐานแพลตฟอร์ม": ["ค่าธรรมเนียมโครงสร้างพื้นฐานแพลตฟอร์ม"],
+  "ค่าธรรมเนียม ของโปรแกรมประหยัดค่าจัดส่ง": ["ค่าธรรมเนียม ของโปรแกรมประหยัดค่าจัดส่ง"],
+  "ภาษี": ["ภาษี", "tax"],
+  "ค่าธรรมเนียมเติมเงินโฆษณาจากเงิน Escrow": ["ค่าธรรมเนียมเติมเงินโฆษณาจากเงิน Escrow"],
+  "ค่าบริการติดตั้งจริงจากผู้ให้บริการ": ["ค่าบริการติดตั้งจริงจากผู้ให้บริการ"],
+};
+
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\uFEFF\r\n\t]/g, " ")
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9ก-๙]/g, "");
+}
+
+const normalizedAliases = Object.fromEntries(
+  Object.entries(HEADER_ALIASES).map(([field, aliases]) => [
+    field,
+    new Set(aliases.map(normalizeHeader).filter(Boolean)),
+  ]),
+);
+
+function findHeaderIndexes(headerRow = []) {
+  const indexes = {};
+  headerRow.forEach((value, index) => {
+    const normalized = normalizeHeader(value);
+    if (!normalized) return;
+
+    for (const [field, aliases] of Object.entries(normalizedAliases)) {
+      if (!(field in indexes) && aliases.has(normalized)) {
+        indexes[field] = index;
+      }
+    }
+  });
+  return indexes;
+}
+
+function headerScore(indexes) {
+  if (!(ORDER_ID_FIELD in indexes)) return -1;
+  let score = 10;
+  if (ORDER_DATE_FIELD in indexes) score += 3;
+  if (PRODUCT_NAME_FIELD in indexes) score += 3;
+  if (SALE_PRICE_FIELD in indexes) score += 2;
+  if (TRANSFER_FIELD in indexes) score += 2;
+  return score + Object.keys(indexes).length / 100;
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function rowFromIndexes(row, indexes) {
+  const result = {};
+  for (const [field, index] of Object.entries(indexes)) {
+    result[field] = row?.[index] ?? "";
+  }
+  return result;
+}
+
+/**
+ * Finds a table header in the first part of a worksheet and maps its rows to
+ * the fields used by the dashboard. Shopee reports often put a title and
+ * report metadata above the actual header row.
+ */
+export function parseSpreadsheetRows(matrix = []) {
+  const candidateRows = Array.isArray(matrix) ? matrix.slice(0, 50) : [];
+  let best = null;
+
+  candidateRows.forEach((row, index) => {
+    const indexes = findHeaderIndexes(Array.isArray(row) ? row : []);
+    const score = headerScore(indexes);
+    if (score >= 0 && (!best || score > best.score)) {
+      best = { headerRowIndex: index, indexes, score };
+    }
+  });
+
+  if (!best) {
+    return {
+      rows: [],
+      headerRowIndex: -1,
+      headers: [],
+      hasOrderId: false,
+      profile: "unknown",
+    };
+  }
+
+  const header = Array.isArray(matrix[best.headerRowIndex])
+    ? matrix[best.headerRowIndex]
+    : [];
+  const rows = [];
+  for (const row of matrix.slice(best.headerRowIndex + 1)) {
+    const parsed = rowFromIndexes(Array.isArray(row) ? row : [], best.indexes);
+    if (hasValue(parsed[ORDER_ID_FIELD])) rows.push(parsed);
+  }
+
+  return {
+    rows,
+    headerRowIndex: best.headerRowIndex,
+    headers: header.map((value) => String(value ?? "").trim()).filter(Boolean),
+    hasOrderId: true,
+    profile: TRANSFER_FIELD in best.indexes ? "income" : "orders",
+  };
+}
+
+export function extractRowsFromMatrix(matrix = []) {
+  return parseSpreadsheetRows(matrix).rows;
+}
 
 export function toNumber(value) {
   if (typeof value === "number") {
@@ -34,7 +224,30 @@ function calculatePercent(gross, profit) {
   return gross ? Number(((profit / gross) * 100).toFixed(10)) : 0;
 }
 
+function isoDate(year, month, day = "") {
+  let numericYear = Number(year);
+  const numericMonth = Number(month);
+  const numericDay = day === "" ? "" : Number(day);
+  if (numericYear >= 2400 && numericYear <= 2700) numericYear -= 543;
+  if (!Number.isInteger(numericYear) || numericYear < 1900 || numericYear > 2200) return "";
+  if (!Number.isInteger(numericMonth) || numericMonth < 1 || numericMonth > 12) return "";
+  if (numericDay !== "" && (!Number.isInteger(numericDay) || numericDay < 1 || numericDay > 31)) return "";
+
+  if (numericDay === "") return `${numericYear}-${String(numericMonth).padStart(2, "0")}`;
+  const date = new Date(Date.UTC(numericYear, numericMonth - 1, numericDay));
+  if (
+    date.getUTCFullYear() !== numericYear
+    || date.getUTCMonth() !== numericMonth - 1
+    || date.getUTCDate() !== numericDay
+  ) return "";
+  return `${numericYear}-${String(numericMonth).padStart(2, "0")}-${String(numericDay).padStart(2, "0")}`;
+}
+
 export function normalizeDate(value) {
+  if (value && typeof value.toDate === "function") {
+    return normalizeDate(value.toDate());
+  }
+
   if (value instanceof Date && !Number.isNaN(value.valueOf())) {
     return value.toISOString().slice(0, 10);
   }
@@ -46,11 +259,44 @@ export function normalizeDate(value) {
   }
 
   const text = String(value ?? "").trim();
-  const match = text.match(/^(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?/);
-  if (!match) return text;
+  if (!text) return "";
 
-  const [, year, month, day] = match;
-  return `${year}-${month.padStart(2, "0")}${day ? `-${day.padStart(2, "0")}` : ""}`;
+  const serial = Number(text);
+  if (/^\d+(?:\.\d+)?$/.test(text) && serial >= 20000 && serial <= 100000) {
+    return normalizeDate(serial);
+  }
+
+  const isoMatch = text.match(/^(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?/);
+  if (isoMatch) {
+    return isoDate(isoMatch[1], isoMatch[2], isoMatch[3] ?? "") || text;
+  }
+
+  const separatedMatch = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (separatedMatch) {
+    let [, first, second, year] = separatedMatch;
+    let day = first;
+    let month = second;
+    if (Number(first) <= 12 && Number(second) > 12) {
+      day = second;
+      month = first;
+    }
+    return isoDate(year, month, day) || text;
+  }
+
+  return text;
+}
+
+function positiveFee(value) {
+  return Math.abs(toNumber(value));
+}
+
+function incomeProductGross(row) {
+  return [SALE_PRICE_FIELD, ...PRODUCT_ADJUSTMENT_FIELDS]
+    .reduce((sum, field) => sum + toNumber(row?.[field]), 0);
+}
+
+function hasIncomePayout(row) {
+  return hasValue(row?.[TRANSFER_FIELD]);
 }
 
 export function aggregateRows(rows, costMap = {}) {
@@ -61,14 +307,23 @@ export function aggregateRows(rows, costMap = {}) {
     const orderId = String(row?.[ORDER_ID_FIELD] ?? "").trim();
     if (!orderId) continue;
 
-    const name = String(row?.[PRODUCT_NAME_FIELD] ?? "").trim() || "ไม่ระบุสินค้า";
+    const rawName = String(row?.[PRODUCT_NAME_FIELD] ?? "").trim();
+    const hasProductName = Boolean(rawName);
+    const name = rawName || "ไม่ระบุสินค้า";
     const option = String(row?.[PRODUCT_OPTION_FIELD] ?? "").trim();
+    const displayName = option ? `${name} (${option})` : name;
     const sku = hashSKU(`${name}|${option}`);
     const rawQuantity = toNumber(row?.[QUANTITY_FIELD]);
     const quantity = rawQuantity || 1;
-    const price = toNumber(row?.[SALE_PRICE_FIELD]);
-    const unitCost = toNumber(costMap[sku]);
     const date = normalizeDate(row?.[ORDER_DATE_FIELD]);
+    const incomePayout = hasIncomePayout(row);
+    const gross = incomePayout ? incomeProductGross(row) : toNumber(row?.[SALE_PRICE_FIELD]) * quantity;
+    const unitCost = hasProductName ? toNumber(costMap[sku]) : 0;
+    const fee = incomePayout
+      ? gross - toNumber(row?.[TRANSFER_FIELD])
+      : positiveFee(row?.[COMMISSION_FIELD])
+        + positiveFee(row?.[TRANSACTION_FEE_FIELD])
+        + positiveFee(row?.[SERVICE_FEE_FIELD]);
 
     if (!grouped.has(orderId)) {
       grouped.set(orderId, {
@@ -83,26 +338,31 @@ export function aggregateRows(rows, costMap = {}) {
     }
 
     const order = grouped.get(orderId);
-    order.gross += price * quantity;
+    order.gross += gross;
     order.cost += unitCost * quantity;
-    order.fee += toNumber(row?.[COMMISSION_FIELD])
-      + toNumber(row?.[TRANSACTION_FEE_FIELD])
-      + toNumber(row?.[SERVICE_FEE_FIELD]);
-    order.items.push(`${name} x${quantity}`);
-
-    products[sku] = {
-      name,
-      cost: unitCost,
-    };
+    order.fee += fee;
+    if (hasProductName) {
+      order.items.push(`${name} x${quantity}`);
+      products[sku] = {
+        name,
+        displayName,
+        cost: unitCost,
+      };
+    }
   }
 
   const orders = [...grouped.values()].map((order) => {
     const profit = order.gross - order.cost - order.fee;
     return {
-      ...order,
+      oid: order.oid,
+      date: order.date,
+      month: order.month,
+      gross: order.gross,
+      cost: order.cost,
+      fee: order.fee,
       profit,
       percent: calculatePercent(order.gross, profit),
-      items: order.items.join(", "),
+      items: order.items.length ? order.items.join(", ") : "ไม่ระบุสินค้า",
     };
   });
 
@@ -119,11 +379,13 @@ export function normalizeOrder(order = {}) {
   const percent = Object.hasOwn(order, "percent")
     ? toNumber(order.percent)
     : calculatePercent(gross, profit);
+  const date = normalizeDate(order.date);
 
   return {
     ...order,
-    orderId: String(order.orderId ?? ""),
-    date: normalizeDate(order.date),
+    orderId: String(order.orderId ?? order.oid ?? ""),
+    date,
+    month: date ? date.slice(0, 7) : String(order.month ?? ""),
     items: String(order.items ?? ""),
     gross,
     cost,
@@ -134,8 +396,8 @@ export function normalizeOrder(order = {}) {
 }
 
 export function filterOrders(orders, { year = "", month = "" } = {}) {
-  return orders.filter((order) => {
-    const date = String(order.date ?? "");
+  return orders.filter((rawOrder) => {
+    const date = normalizeDate(rawOrder?.date);
     if (year && !date.startsWith(year)) return false;
     if (month && date.slice(5, 7) !== month) return false;
     return true;
@@ -155,7 +417,7 @@ export function summarizeOrders(orders) {
 
     for (const item of order.items.split(",")) {
       const name = item.trim();
-      if (name) products[name] = (products[name] || 0) + order.profit;
+      if (name && name !== "ไม่ระบุสินค้า") products[name] = (products[name] || 0) + order.profit;
     }
   }
 
@@ -169,5 +431,22 @@ export function summarizeOrders(orders) {
     topProducts: Object.entries(products)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10),
+  };
+}
+
+export function buildReportModel(orders, filters = {}) {
+  const filtered = filterOrders(orders.map(normalizeOrder), filters).map(normalizeOrder);
+  const summary = filtered.reduce((totals, order) => ({
+    gross: totals.gross + order.gross,
+    cost: totals.cost + order.cost,
+    fee: totals.fee + order.fee,
+    profit: totals.profit + order.profit,
+  }), { gross: 0, cost: 0, fee: 0, profit: 0 });
+
+  return {
+    filters: { year: filters.year || "", month: filters.month || "" },
+    summary,
+    orders: filtered,
+    monthly: summarizeOrders(filtered).monthly,
   };
 }
