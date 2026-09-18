@@ -290,6 +290,7 @@ import {
   filterOrders,
   filterProducts,
   mergeImportResults,
+  mergeOrdersWithExisting,
   normalizeOrder,
   parseSpreadsheetRows,
   recalculateOrder,
@@ -684,7 +685,7 @@ function orderDocumentId(orderId) {
   return orderId.includes("/") ? encodeURIComponent(orderId) : orderId;
 }
 
-async function saveOrders(newOrders) {
+async function saveOrders(newOrders, { overwrite = false } = {}) {
   const references = newOrders.map((order) => ({
     order,
     orderId: order.oid || order.orderId,
@@ -699,15 +700,25 @@ async function saveOrders(newOrders) {
     });
   }
 
-  const pending = references.filter(({ orderId }) => !existingIds.has(orderId));
+  const pending = overwrite
+    ? references
+    : references.filter(({ orderId }) => !existingIds.has(orderId));
   for (let start = 0; start < pending.length; start += 400) {
     const batch = db.batch();
-    pending.slice(start, start + 400).forEach(({ order, reference }) => {
-      batch.set(reference, orderPayload(order, true));
+    pending.slice(start, start + 400).forEach(({ order, orderId, reference }) => {
+      if (overwrite && existingIds.has(orderId)) {
+        batch.update(reference, orderPayload(order));
+      } else {
+        batch.set(reference, orderPayload(order, true));
+      }
     });
     await batch.commit();
   }
-  return { saved: pending.length, skipped: existingIds.size };
+  return {
+    saved: pending.length - (overwrite ? existingIds.size : 0),
+    updated: overwrite ? existingIds.size : 0,
+    skipped: overwrite ? 0 : existingIds.size,
+  };
 }
 
 function orderPayload(order, includeCreatedAt = false) {
@@ -751,7 +762,13 @@ function openDialog(dialog) {
 
 function renderImportPreview() {
   if (!pendingImport) return;
-  const { files, rawRows, result, selectedOrders } = pendingImport;
+  const {
+    files,
+    rawRows,
+    result,
+    selectedOrders,
+    orderOnlyExcluded = 0,
+  } = pendingImport;
   const dates = selectedOrders.map((order) => order.date).filter(Boolean).sort();
   const unknown = selectedOrders.filter((order) => !order.lineItems?.length).length;
   const excluded = result.orders.length - selectedOrders.length;
@@ -762,6 +779,7 @@ function renderImportPreview() {
     ["คำสั่งซื้อทั้งหมดในไฟล์", result.orders.length],
     ["คำสั่งซื้อปี 2026 ที่จะนำเข้า", selectedOrders.length],
     ["รายการเก่าที่ตัดออก", excluded],
+    ["Order ที่ไม่มีคู่ใน Income", orderOnlyExcluded],
     ["ยังจับคู่รายละเอียดสินค้าไม่ได้", unknown],
     ["ช่วงวันที่ปี 2026", dates.length ? `${dates[0]} ถึง ${dates.at(-1)}` : "ไม่มี"],
   ].forEach(([label, value]) => {
@@ -774,9 +792,14 @@ function renderImportPreview() {
     block.append(labelNode, valueNode);
     importPreviewGrid.appendChild(block);
   });
-  importNote.textContent = unknown
-    ? `พบ ${unknown} ออเดอร์ที่ยังไม่มีชื่อสินค้า/รายการสินค้าในไฟล์นี้ จึงคำนวณต้นทุนเป็น 0 จนกว่าจะอัปโหลดไฟล์ Orders ที่มีรายละเอียดสินค้า หรือเพิ่มข้อมูลในหน้า Cost`
-    : "ข้อมูลปี 2026 พร้อมนำเข้าและคำนวณต้นทุนจากรายการสินค้าแล้ว";
+  const importNotes = [];
+  if (orderOnlyExcluded) {
+    importNotes.push(`ตัด ${orderOnlyExcluded} ออเดอร์จากไฟล์ Orders ที่ไม่มีคู่ใน Income ออก เพื่อไม่ให้ยอดกำไรคลาดเคลื่อน`);
+  }
+  if (unknown) {
+    importNotes.push(`พบ ${unknown} ออเดอร์ที่ยังไม่มีชื่อสินค้า/รายการสินค้าในไฟล์นี้ จึงคำนวณต้นทุนเป็น 0 จนกว่าจะอัปโหลดไฟล์ Orders ที่มีรายละเอียดสินค้า หรือเพิ่มข้อมูลในหน้า Cost`);
+  }
+  importNote.textContent = importNotes.join(" ") || "ข้อมูลปี 2026 พร้อมนำเข้าและคำนวณต้นทุนจากรายการสินค้าแล้ว";
   backupStatus.textContent = orders.length
     ? (backupReady ? "✅ ดาวน์โหลด Backup แล้ว สามารถใช้คำสั่งล้างข้อมูลเดิมได้" : "ต้องดาวน์โหลด Backup ก่อนใช้คำสั่งล้างข้อมูลเดิม")
     : "ไม่มี Orders เดิม จึงไม่จำเป็นต้องสร้าง Backup ก่อนนำเข้า";
@@ -819,13 +842,13 @@ async function commitPendingImport(replaceExisting = false) {
     await saveProducts(pendingImport.result.products);
     let deleted = 0;
     if (replaceExisting) deleted = await deleteAllOrders();
-    const outcome = await saveOrders(selectedOrders);
+    const outcome = await saveOrders(selectedOrders, { overwrite: true });
     pendingImport = null;
     backupReady = false;
     closeDialog(importDialog);
     await loadCosts();
     await loadOrders();
-    setStatus(`✅ นำเข้าปี 2026 แล้ว ${outcome.saved} รายการ | ข้ามซ้ำ ${outcome.skipped}${replaceExisting ? ` | ลบข้อมูลเดิม ${deleted} รายการ` : ""}`);
+    setStatus(`✅ นำเข้าปี 2026 แล้ว ${outcome.saved} รายการใหม่ | อัปเดต ${outcome.updated} รายการเดิม${replaceExisting ? ` | ลบข้อมูลเดิม ${deleted} รายการ` : ""}`);
   } catch (error) {
     console.error(error);
     setStatus(`❌ บันทึกข้อมูลนำเข้าไม่สำเร็จ: ${explainFirebaseError(error)}`, true);
@@ -868,12 +891,34 @@ async function uploadFiles(event) {
       aggregateRows(incomeRows, costMap),
       costMap,
     );
-    const selectedOrders = filterOrders(result.orders.map(normalizeOrder), { year: "2026" });
+    const importedOrders = filterOrders(result.orders.map(normalizeOrder), { year: "2026" });
+    const incomeOrderIds = new Set(
+      incomeRows
+        .map((row) => String(row?.["หมายเลขคำสั่งซื้อ"] ?? "").trim())
+        .filter(Boolean),
+    );
+    const existingOrderIds = new Set(orders.map((order) => String(order.orderId || order.oid || "")));
+    const eligibleOrders = incomeOrderIds.size
+      ? importedOrders.filter((order) => incomeOrderIds.has(order.orderId))
+      : orders.length
+        ? importedOrders.filter((order) => existingOrderIds.has(order.orderId))
+        : importedOrders;
+    const selectedOrders = mergeOrdersWithExisting(
+      eligibleOrders,
+      orders,
+      costMap,
+    );
     if (!selectedOrders.length) {
       setStatus("❌ ไฟล์ที่เลือกไม่มีรายการปี 2026 ที่นำเข้าได้", true);
       return;
     }
-    pendingImport = { files: validFiles, rawRows, result, selectedOrders };
+    pendingImport = {
+      files: validFiles,
+      rawRows,
+      result,
+      selectedOrders,
+      orderOnlyExcluded: importedOrders.length - eligibleOrders.length,
+    };
     backupReady = orders.length === 0;
     renderImportPreview();
     openDialog(importDialog);

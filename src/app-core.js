@@ -574,6 +574,50 @@ export function mergeImportResults(orderResult = {}, incomeResult = {}, costMap 
   return { orders, products };
 }
 
+function hasProductDetails(order) {
+  return Array.isArray(order?.lineItems) && order.lineItems.length > 0;
+}
+
+function hasKnownItems(order) {
+  const items = String(order?.items ?? "").trim();
+  return Boolean(items) && items !== "ไม่ระบุสินค้า";
+}
+
+export function mergeOrdersWithExisting(importedOrders = [], existingOrders = [], costMap = {}) {
+  const existingById = new Map(
+    existingOrders.map((order) => [normalizeOrder(order).orderId, normalizeOrder(order)]),
+  );
+
+  return importedOrders.map((rawOrder) => {
+    const imported = normalizeOrder(rawOrder);
+    const existing = existingById.get(imported.orderId);
+    if (!existing) return recalculateOrder(imported, costMap);
+
+    const importedHasDetails = hasProductDetails(imported);
+    const existingHasDetails = hasProductDetails(existing);
+    const merged = {
+      ...existing,
+      ...imported,
+      lineItems: importedHasDetails ? imported.lineItems : existing.lineItems,
+      items: importedHasDetails || !hasKnownItems(existing)
+        ? imported.items
+        : existing.items,
+    };
+
+    // An Orders export supplies product details but its gross/fee columns are
+    // not the payout figures from an Income export. Keep the existing payout
+    // snapshot when enriching an Income-only order.
+    if (importedHasDetails && !existingHasDetails) {
+      merged.date = existing.date || imported.date;
+      merged.month = existing.month || imported.month;
+      merged.gross = existing.gross;
+      merged.fee = existing.fee;
+    }
+
+    return recalculateOrder(merged, costMap);
+  });
+}
+
 export function summarizeOrders(orders) {
   const monthly = {};
   const products = {};

@@ -8,6 +8,7 @@ import {
   filterProducts,
   filterOrders,
   mergeImportResults,
+  mergeOrdersWithExisting,
   normalizeDate,
   normalizeOrder,
   recalculateOrder,
@@ -232,4 +233,39 @@ test("joins Orders product details with Income payout data and recalculates cost
   const recalculated = recalculateOrder(merged.orders[0], { SKU_3066816148: 80 });
   assert.equal(recalculated.cost, 160);
   assert.equal(recalculated.profit, 20);
+});
+
+test("enriches an existing Income order with Orders line items without losing payout figures", () => {
+  const importedOrder = aggregateRows([
+    {
+      "หมายเลขคำสั่งซื้อ": "A-1",
+      "วันที่ทำการสั่งซื้อ": "2026-09-15",
+      "ชื่อสินค้า": "Mug",
+      "ชื่อตัวเลือก": "Red",
+      "จำนวน": 2,
+      "ราคาขาย": 100,
+    },
+  ]).orders;
+  const existingIncomeOrder = [{
+    orderId: "A-1",
+    date: "2026-09-15",
+    gross: 180,
+    fee: 20,
+    cost: 0,
+    profit: 160,
+    percent: 88.8888888889,
+    items: "ไม่ระบุสินค้า",
+    lineItems: [],
+  }];
+
+  const enriched = mergeOrdersWithExisting(importedOrder, existingIncomeOrder, {
+    SKU_3066816148: 60,
+  })[0];
+
+  assert.equal(enriched.gross, 180);
+  assert.equal(enriched.fee, 20);
+  assert.equal(enriched.cost, 120);
+  assert.equal(enriched.profit, 40);
+  assert.equal(enriched.items, "Mug (Red) x2");
+  assert.equal(enriched.lineItems.length, 1);
 });
