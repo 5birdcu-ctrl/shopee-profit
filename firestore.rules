@@ -13,19 +13,19 @@ service cloud.firestore {
 
     function isValidProduct() {
       return request.resource.data.keys().hasOnly(['name', 'cost'])
-        && request.resource.data.keys().hasAll(['cost'])
+        && request.resource.data.keys().hasAll(['name', 'cost'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 500
         && request.resource.data.cost is number
         && request.resource.data.cost >= 0
-        && request.resource.data.cost <= 1000000000
-        && (!('name' in request.resource.data)
-          || (request.resource.data.name is string
-            && request.resource.data.name.size() <= 500));
+        && request.resource.data.cost <= 1000000000;
     }
 
     function isValidOrder() {
       return request.resource.data.keys().hasOnly([
           'orderId', 'date', 'month', 'gross', 'cost', 'fee',
-          'profit', 'percent', 'items', 'createdAt'
+          'profit', 'percent', 'items', 'lineItems', 'createdAt'
         ])
         && request.resource.data.keys().hasAll([
           'orderId', 'date', 'month', 'gross', 'cost', 'fee',
@@ -56,6 +56,9 @@ service cloud.firestore {
         && request.resource.data.percent <= 100000000
         && request.resource.data.items is string
         && request.resource.data.items.size() <= 5000
+        && (!('lineItems' in request.resource.data)
+          || (request.resource.data.lineItems is list
+            && request.resource.data.lineItems.size() <= 100))
         && (!('createdAt' in request.resource.data)
           || request.resource.data.createdAt is timestamp);
     }

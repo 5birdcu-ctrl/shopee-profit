@@ -224,6 +224,33 @@ function calculatePercent(gross, profit) {
   return gross ? Number(((profit / gross) * 100).toFixed(10)) : 0;
 }
 
+function productCost(product) {
+  if (product && typeof product === "object" && !Array.isArray(product)) {
+    return toNumber(product.cost);
+  }
+  return toNumber(product);
+}
+
+function normalizeLineItems(lineItems = []) {
+  if (!Array.isArray(lineItems)) return [];
+
+  return lineItems
+    .map((item) => ({
+      sku: String(item?.sku ?? "").trim(),
+      name: String(item?.name ?? "").trim(),
+      quantity: toNumber(item?.quantity) || 1,
+      unitPrice: toNumber(item?.unitPrice),
+    }))
+    .filter((item) => item.sku || item.name);
+}
+
+function lineItemText(lineItems = []) {
+  const text = normalizeLineItems(lineItems)
+    .filter((item) => item.name)
+    .map((item) => `${item.name} x${item.quantity}`);
+  return text.length ? text.join(", ") : "ไม่ระบุสินค้า";
+}
+
 function isoDate(year, month, day = "") {
   let numericYear = Number(year);
   const numericMonth = Number(month);
@@ -318,7 +345,7 @@ export function aggregateRows(rows, costMap = {}) {
     const date = normalizeDate(row?.[ORDER_DATE_FIELD]);
     const incomePayout = hasIncomePayout(row);
     const gross = incomePayout ? incomeProductGross(row) : toNumber(row?.[SALE_PRICE_FIELD]) * quantity;
-    const unitCost = hasProductName ? toNumber(costMap[sku]) : 0;
+    const unitCost = hasProductName ? productCost(costMap[sku]) : 0;
     const fee = incomePayout
       ? gross - toNumber(row?.[TRANSFER_FIELD])
       : positiveFee(row?.[COMMISSION_FIELD])
@@ -334,6 +361,7 @@ export function aggregateRows(rows, costMap = {}) {
         cost: 0,
         fee: 0,
         items: [],
+        lineItems: [],
       });
     }
 
@@ -343,6 +371,12 @@ export function aggregateRows(rows, costMap = {}) {
     order.fee += fee;
     if (hasProductName) {
       order.items.push(`${name} x${quantity}`);
+      order.lineItems.push({
+        sku,
+        name: displayName,
+        quantity,
+        unitPrice: toNumber(row?.[SALE_PRICE_FIELD]),
+      });
       products[sku] = {
         name,
         displayName,
@@ -363,6 +397,7 @@ export function aggregateRows(rows, costMap = {}) {
       profit,
       percent: calculatePercent(order.gross, profit),
       items: order.items.length ? order.items.join(", ") : "ไม่ระบุสินค้า",
+      lineItems: normalizeLineItems(order.lineItems),
     };
   });
 
@@ -387,11 +422,31 @@ export function normalizeOrder(order = {}) {
     date,
     month: date ? date.slice(0, 7) : String(order.month ?? ""),
     items: String(order.items ?? ""),
+    lineItems: normalizeLineItems(order.lineItems),
     gross,
     cost,
     fee,
     profit,
     percent,
+  };
+}
+
+export function recalculateOrder(order = {}, costMap = {}) {
+  const normalized = normalizeOrder(order);
+  if (!normalized.lineItems.length) return normalized;
+
+  const cost = normalized.lineItems.reduce(
+    (sum, item) => sum + productCost(costMap[item.sku]) * item.quantity,
+    0,
+  );
+  const profit = normalized.gross - cost - normalized.fee;
+
+  return {
+    ...normalized,
+    cost,
+    profit,
+    percent: calculatePercent(normalized.gross, profit),
+    items: lineItemText(normalized.lineItems),
   };
 }
 
@@ -402,6 +457,121 @@ export function filterOrders(orders, { year = "", month = "" } = {}) {
     if (month && date.slice(5, 7) !== month) return false;
     return true;
   });
+}
+
+export function sortOrders(orders = [], mode = "newest") {
+  const direction = mode === "oldest" ? 1 : -1;
+  const numericMode = new Set([
+    "profit-desc",
+    "profit-asc",
+    "gross-desc",
+    "gross-asc",
+  ]).has(mode);
+
+  return orders
+    .map((order, index) => ({ order, index, normalized: normalizeOrder(order) }))
+    .sort((left, right) => {
+      let comparison = 0;
+      if (mode === "newest" || mode === "oldest") {
+        comparison = left.normalized.date.localeCompare(right.normalized.date);
+        comparison *= direction;
+      } else if (numericMode) {
+        const field = mode.startsWith("profit") ? "profit" : "gross";
+        comparison = left.normalized[field] - right.normalized[field];
+        if (mode.endsWith("-desc")) comparison *= -1;
+      }
+
+      if (comparison !== 0) return comparison;
+      const orderIdComparison = left.normalized.orderId.localeCompare(right.normalized.orderId);
+      return orderIdComparison || left.index - right.index;
+    })
+    .map(({ order }) => order);
+}
+
+export function filterProducts(products = {}, filter = "all") {
+  const entries = Array.isArray(products)
+    ? products.map((product) => [String(product?.sku ?? ""), product])
+    : Object.entries(products);
+  const result = {};
+
+  for (const [sku, product] of entries) {
+    const name = String(product?.name ?? "").trim();
+    const cost = productCost(product);
+    const matches = filter === "missing-name"
+      ? !name
+      : filter === "zero-cost"
+        ? cost === 0
+        : filter === "incomplete"
+          ? !name || cost === 0
+          : true;
+    if (matches) result[sku] = product;
+  }
+
+  return result;
+}
+
+export function validateProduct({ sku = "", name = "", cost } = {}) {
+  const errors = [];
+  const normalizedSku = String(sku).trim();
+  const normalizedName = String(name).trim();
+  const costText = typeof cost === "string" ? cost.trim() : cost;
+  const parsedCost = typeof costText === "number"
+    ? costText
+    : costText === ""
+      ? Number.NaN
+      : Number(String(costText).replace(/,/g, ""));
+
+  if (!normalizedSku || normalizedSku.includes("/")) errors.push("invalid-sku");
+  if (!normalizedName || normalizedName.length > 500) errors.push("invalid-name");
+  if (!Number.isFinite(parsedCost) || parsedCost < 0 || parsedCost > 1000000000) {
+    errors.push("invalid-cost");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function mergeImportResults(orderResult = {}, incomeResult = {}, costMap = {}) {
+  const detailOrders = new Map((orderResult.orders || []).map((order) => [String(order.oid ?? order.orderId), order]));
+  const incomeOrders = new Map((incomeResult.orders || []).map((order) => [String(order.oid ?? order.orderId), order]));
+  const productEntries = {
+    ...(orderResult.products || {}),
+    ...(incomeResult.products || {}),
+  };
+  const effectiveCosts = { ...productEntries, ...costMap };
+  const ids = [...new Set([...detailOrders.keys(), ...incomeOrders.keys()])];
+
+  const orders = ids.map((id) => {
+    const detail = detailOrders.get(id);
+    const income = incomeOrders.get(id);
+    const lineItems = normalizeLineItems(detail?.lineItems);
+    const base = {
+      oid: id,
+      date: income?.date || detail?.date || "",
+      month: (income?.date || detail?.date || "").slice(0, 7),
+      gross: income ? toNumber(income.gross) : toNumber(detail?.gross),
+      cost: detail ? toNumber(detail.cost) : 0,
+      fee: income ? toNumber(income.fee) : toNumber(detail?.fee),
+      items: detail?.items || income?.items || "ไม่ระบุสินค้า",
+      lineItems,
+    };
+    const merged = recalculateOrder(base, effectiveCosts);
+    const profit = merged.gross - merged.cost - merged.fee;
+    return {
+      ...merged,
+      profit,
+      percent: calculatePercent(merged.gross, profit),
+    };
+  });
+
+  const products = Object.fromEntries(Object.entries(productEntries).map(([sku, product]) => [
+    sku,
+    {
+      ...(product && typeof product === "object" ? product : {}),
+      cost: productCost(effectiveCosts[sku]),
+    },
+  ]));
+
+  return { orders, products };
 }
 
 export function summarizeOrders(orders) {
@@ -435,7 +605,10 @@ export function summarizeOrders(orders) {
 }
 
 export function buildReportModel(orders, filters = {}) {
-  const filtered = filterOrders(orders.map(normalizeOrder), filters).map(normalizeOrder);
+  const filtered = sortOrders(
+    filterOrders(orders.map(normalizeOrder), filters),
+    filters.sort || "newest",
+  ).map(normalizeOrder);
   const summary = filtered.reduce((totals, order) => ({
     gross: totals.gross + order.gross,
     cost: totals.cost + order.cost,
@@ -444,7 +617,11 @@ export function buildReportModel(orders, filters = {}) {
   }), { gross: 0, cost: 0, fee: 0, profit: 0 });
 
   return {
-    filters: { year: filters.year || "", month: filters.month || "" },
+    filters: {
+      year: filters.year || "",
+      month: filters.month || "",
+      sort: filters.sort || "newest",
+    },
     summary,
     orders: filtered,
     monthly: summarizeOrders(filtered).monthly,

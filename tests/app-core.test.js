@@ -5,10 +5,15 @@ import {
   aggregateRows,
   buildReportModel,
   extractRowsFromMatrix,
+  filterProducts,
   filterOrders,
+  mergeImportResults,
   normalizeDate,
   normalizeOrder,
+  recalculateOrder,
+  sortOrders,
   toNumber,
+  validateProduct,
 } from "../src/app-core.js";
 
 test("finds the real header row and parses Thai dates from an Income sheet", () => {
@@ -45,6 +50,7 @@ test("uses the transferred amount for an Income report without inventing Cost pr
     profit: 216,
     percent: 80.2973977695,
     items: "ไม่ระบุสินค้า",
+    lineItems: [],
   });
   assert.deepEqual(result.products, {});
 });
@@ -94,6 +100,10 @@ test("aggregates rows into an order and keeps product cost data", () => {
       profit: 119,
       percent: 47.6,
       items: "Mug x2, Pen x1",
+      lineItems: [
+        { sku: "SKU_3066816148", name: "Mug (Red)", quantity: 2, unitPrice: 100 },
+        { sku: "SKU_2483875", name: "Pen", quantity: 1, unitPrice: 50 },
+      ],
     },
   ]);
   assert.equal(result.products.SKU_3066816148.name, "Mug");
@@ -153,7 +163,7 @@ test("builds a PDF report model from the currently filtered orders", () => {
       profit: 27,
       percent: 54,
     },
-  ], { year: "2026", month: "09" });
+  ], { year: "2026", month: "09", sort: "profit-desc" });
 
   assert.equal(report.orders.length, 1);
   assert.equal(report.orders[0].orderId, "A-1");
@@ -163,4 +173,63 @@ test("builds a PDF report model from the currently filtered orders", () => {
     fee: 11,
     profit: 119,
   });
+});
+
+test("sorts orders by date, profit, and gross with stable tie breaking", () => {
+  const orders = [
+    { orderId: "B", date: "2026-09-01", gross: 100, profit: 20 },
+    { orderId: "A", date: "2026-09-03", gross: 300, profit: 20 },
+    { orderId: "C", date: "2026-09-02", gross: 200, profit: 50 },
+  ];
+
+  assert.deepEqual(sortOrders(orders, "newest").map((order) => order.orderId), ["A", "C", "B"]);
+  assert.deepEqual(sortOrders(orders, "oldest").map((order) => order.orderId), ["B", "C", "A"]);
+  assert.deepEqual(sortOrders(orders, "profit-desc").map((order) => order.orderId), ["C", "A", "B"]);
+  assert.deepEqual(sortOrders(orders, "gross-desc").map((order) => order.orderId), ["A", "C", "B"]);
+});
+
+test("filters incomplete products for Cost cleanup", () => {
+  const products = {
+    SKU_A: { name: "Mug", cost: 60 },
+    SKU_B: { name: "", cost: 0 },
+    SKU_C: { name: "Pen", cost: 0 },
+  };
+
+  assert.deepEqual(Object.keys(filterProducts(products, "missing-name")), ["SKU_B"]);
+  assert.deepEqual(Object.keys(filterProducts(products, "zero-cost")), ["SKU_B", "SKU_C"]);
+  assert.equal(validateProduct({ sku: "SKU_A", name: "Mug", cost: 60 }).valid, true);
+  assert.equal(validateProduct({ sku: "SKU_A", name: "", cost: 60 }).valid, false);
+  assert.equal(validateProduct({ sku: "bad/id", name: "Mug", cost: 60 }).valid, false);
+});
+
+test("joins Orders product details with Income payout data and recalculates cost", () => {
+  const orderResult = aggregateRows([
+    {
+      "หมายเลขคำสั่งซื้อ": "A-1",
+      "วันที่ทำการสั่งซื้อ": "2026-09-15",
+      "ชื่อสินค้า": "Mug",
+      "ชื่อตัวเลือก": "Red",
+      "จำนวน": 2,
+      "ราคาขาย": 100,
+    },
+  ], { SKU_3066816148: 60 });
+  const incomeResult = aggregateRows([
+    {
+      "หมายเลขคำสั่งซื้อ": "A-1",
+      "วันที่ทำการสั่งซื้อ": "2026-09-15",
+      "ราคาขาย": 200,
+      "จำนวนเงินทั้งหมดที่โอนแล้ว (฿)": 180,
+    },
+  ]);
+
+  const merged = mergeImportResults(orderResult, incomeResult, { SKU_3066816148: 60 });
+  assert.equal(merged.orders[0].gross, 200);
+  assert.equal(merged.orders[0].fee, 20);
+  assert.equal(merged.orders[0].cost, 120);
+  assert.equal(merged.orders[0].profit, 60);
+  assert.equal(merged.orders[0].lineItems[0].sku, "SKU_3066816148");
+
+  const recalculated = recalculateOrder(merged.orders[0], { SKU_3066816148: 80 });
+  assert.equal(recalculated.cost, 160);
+  assert.equal(recalculated.profit, 20);
 });

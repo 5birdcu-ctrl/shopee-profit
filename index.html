@@ -60,6 +60,25 @@ th { background: #f3f4f6; }
 .cost-input { width: 130px; padding: 4px; }
 .cost-save { padding: 4px 8px; }
 .cost-name { min-width: 260px; white-space: normal; overflow-wrap: anywhere; }
+.section-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 14px; }
+.section-toolbar input, .section-toolbar select { padding: 7px 9px; }
+.section-toolbar input { min-width: 240px; }
+.muted { color: #6b7280; font-size: 13px; }
+.warning-text { color: #92400e; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.row-actions button, .dialog-actions button { padding: 6px 10px; }
+dialog { border: 0; border-radius: 10px; padding: 0; width: min(680px, calc(100vw - 28px)); box-shadow: 0 16px 50px rgb(15 23 42 / 24%); }
+dialog::backdrop { background: rgb(15 23 42 / 45%); }
+.dialog-body { padding: 20px; }
+.dialog-body h3 { margin-top: 0; }
+.dialog-field { display: grid; gap: 5px; margin: 12px 0; }
+.dialog-field input, .dialog-field textarea { width: 100%; padding: 8px 9px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.dialog-actions .primary { border: 0; border-radius: 6px; background: #2563eb; color: #fff; }
+.preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 14px 0; }
+.preview-grid div { border-bottom: 1px solid #e5e7eb; padding: 5px 0; }
+.preview-grid strong { display: block; font-size: 16px; }
+.dialog-note { background: #fffbeb; border-radius: 6px; color: #92400e; padding: 9px; font-size: 13px; }
 .auth-help { color: #6b7280; font-size: 13px; }
 .pdf-report {
   position: absolute;
@@ -129,6 +148,14 @@ th { background: #f3f4f6; }
       <option value="09">ก.ย.</option><option value="10">ต.ค.</option>
       <option value="11">พ.ย.</option><option value="12">ธ.ค.</option>
     </select>
+    <select id="sortSelect" aria-label="เรียงรายการ">
+      <option value="newest">ใหม่สุดก่อน</option>
+      <option value="oldest">เก่าสุดก่อน</option>
+      <option value="profit-desc">กำไรสูงสุดก่อน</option>
+      <option value="profit-asc">ขาดทุนสูงสุดก่อน</option>
+      <option value="gross-desc">ยอดขายสูงสุดก่อน</option>
+      <option value="gross-asc">ยอดขายต่ำสุดก่อน</option>
+    </select>
 
     <div class="user-area">
       <span id="userEmail" class="user-email"></span>
@@ -155,6 +182,17 @@ th { background: #f3f4f6; }
 
   <section id="cost" class="box hidden">
     <h3>📦 ต้นทุนสินค้า</h3>
+    <div class="section-toolbar">
+      <input id="costSearch" type="search" placeholder="ค้นหาชื่อสินค้า หรือ SKU" aria-label="ค้นหาต้นทุน">
+      <select id="costFilter" aria-label="กรองสถานะต้นทุน">
+        <option value="all">สินค้าทั้งหมด</option>
+        <option value="incomplete">รายการที่ต้องตรวจ</option>
+        <option value="missing-name">ยังไม่มีชื่อ</option>
+        <option value="zero-cost">ต้นทุนเป็นศูนย์</option>
+      </select>
+      <button id="addProductButton" type="button">เพิ่มรายการต้นทุน</button>
+    </div>
+    <p id="costHint" class="muted"></p>
     <table>
       <thead>
         <tr><th>SKU</th><th>สินค้า</th><th>ต้นทุน/ชิ้น</th><th></th></tr>
@@ -204,6 +242,45 @@ th { background: #f3f4f6; }
       <tbody id="pdfOrderTable"></tbody>
     </table>
   </section>
+
+  <dialog id="productDialog">
+    <form id="productForm" class="dialog-body">
+      <h3 id="productDialogTitle">เพิ่มรายการต้นทุน</h3>
+      <div class="dialog-field">
+        <label for="productSku">SKU</label>
+        <input id="productSku" name="sku" required maxlength="200" autocomplete="off">
+      </div>
+      <div class="dialog-field">
+        <label for="productName">ชื่อสินค้า</label>
+        <input id="productName" name="name" required maxlength="500" autocomplete="off">
+      </div>
+      <div class="dialog-field">
+        <label for="productCost">ต้นทุนต่อชิ้น</label>
+        <input id="productCost" name="cost" type="number" min="0" max="1000000000" step="0.01" required>
+      </div>
+      <p id="productFormError" class="status error hidden"></p>
+      <div class="dialog-actions">
+        <button id="cancelProductButton" type="button">ยกเลิก</button>
+        <button class="primary" type="submit">บันทึก</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="importDialog">
+    <div class="dialog-body">
+      <h3>ตรวจสอบข้อมูลก่อนนำเข้า</h3>
+      <p id="importFiles" class="muted"></p>
+      <div id="importPreviewGrid" class="preview-grid"></div>
+      <p id="importNote" class="dialog-note"></p>
+      <div id="backupStatus" class="muted"></div>
+      <div class="dialog-actions">
+        <button id="cancelImportButton" type="button">ยกเลิก</button>
+        <button id="downloadBackupButton" type="button">ดาวน์โหลด Backup</button>
+        <button id="appendImportButton" class="primary" type="button">เพิ่มต่อท้าย</button>
+        <button id="replaceImportButton" class="primary" type="button">ล้างเดิมแล้วใช้ชุดนี้</button>
+      </div>
+    </div>
+  </dialog>
 </main>
 
 <script type="module">
@@ -211,10 +288,15 @@ import {
   aggregateRows,
   buildReportModel,
   filterOrders,
+  filterProducts,
+  mergeImportResults,
   normalizeOrder,
   parseSpreadsheetRows,
+  recalculateOrder,
+  sortOrders,
   summarizeOrders,
   toNumber,
+  validateProduct,
 } from "./src/app-core.js";
 
 const OWNER_UID = "SCIQFlg8UyX1dJkhacSQLA10JcE3";
@@ -243,6 +325,28 @@ const orderTable = document.getElementById("orderTable");
 const costTable = document.getElementById("costTable");
 const yearFilter = document.getElementById("yearFilter");
 const monthFilter = document.getElementById("monthFilter");
+const sortSelect = document.getElementById("sortSelect");
+const costSearch = document.getElementById("costSearch");
+const costFilter = document.getElementById("costFilter");
+const costHint = document.getElementById("costHint");
+const addProductButton = document.getElementById("addProductButton");
+const productDialog = document.getElementById("productDialog");
+const productForm = document.getElementById("productForm");
+const productDialogTitle = document.getElementById("productDialogTitle");
+const productSku = document.getElementById("productSku");
+const productName = document.getElementById("productName");
+const productCost = document.getElementById("productCost");
+const productFormError = document.getElementById("productFormError");
+const cancelProductButton = document.getElementById("cancelProductButton");
+const importDialog = document.getElementById("importDialog");
+const importFiles = document.getElementById("importFiles");
+const importPreviewGrid = document.getElementById("importPreviewGrid");
+const importNote = document.getElementById("importNote");
+const backupStatus = document.getElementById("backupStatus");
+const downloadBackupButton = document.getElementById("downloadBackupButton");
+const appendImportButton = document.getElementById("appendImportButton");
+const replaceImportButton = document.getElementById("replaceImportButton");
+const cancelImportButton = document.getElementById("cancelImportButton");
 const userEmail = document.getElementById("userEmail");
 const netRevenue = document.getElementById("netRevenue");
 const yearProfit = document.getElementById("yearProfit");
@@ -263,6 +367,9 @@ let filteredOrders = [];
 let costMap = {};
 let productMap = {};
 let productChart = null;
+let sortMode = "newest";
+let pendingImport = null;
+let backupReady = false;
 
 function setStatus(message, isError = false) {
   statusBox.textContent = message;
@@ -318,7 +425,12 @@ function renderOrders() {
     const row = document.createElement("tr");
     addCell(row, order.orderId);
     addCell(row, order.date);
-    addCell(row, order.items);
+    const itemCell = document.createElement("td");
+    itemCell.textContent = order.lineItems?.length
+      ? order.items
+      : `${order.items || "ไม่ระบุสินค้า"} (ยังไม่มีข้อมูลสินค้า)`;
+    if (!order.lineItems?.length) itemCell.className = "warning-text";
+    row.appendChild(itemCell);
     addCell(row, formatNumber(order.gross), "number");
     addCell(row, formatNumber(order.cost), "number");
     addCell(row, formatNumber(order.fee), "number");
@@ -330,13 +442,23 @@ function renderOrders() {
 
 function renderCost() {
   costTable.replaceChildren();
-  const entries = Object.entries(productMap).sort(([a], [b]) => a.localeCompare(b));
+  const query = costSearch.value.trim().toLocaleLowerCase();
+  const visibleProducts = filterProducts(productMap, costFilter.value);
+  const entries = Object.entries(visibleProducts)
+    .filter(([sku, product]) => {
+      const text = `${sku} ${product.displayName || product.name || ""}`.toLocaleLowerCase();
+      return !query || text.includes(query);
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
+  costHint.textContent = `แสดง ${entries.length} จาก ${Object.keys(productMap).length} รายการ | แก้ไขชื่อและต้นทุนได้จากปุ่มแก้ไข`;
   if (!entries.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.className = "empty-row";
-    cell.textContent = "ยังไม่มีข้อมูลสินค้า กรุณาอัปโหลดไฟล์ Orders เพื่อเติมชื่อและต้นทุน";
+    cell.textContent = Object.keys(productMap).length
+      ? "ไม่พบรายการตามตัวกรอง"
+      : "ยังไม่มีข้อมูลสินค้า กรุณาอัปโหลดไฟล์ Orders เพื่อเติมชื่อและต้นทุน";
     row.appendChild(cell);
     costTable.appendChild(row);
     return;
@@ -347,28 +469,25 @@ function renderCost() {
     addCell(row, sku);
     const nameCell = document.createElement("td");
     nameCell.className = "cost-name";
-    nameCell.textContent = product.displayName || product.name || "ไม่ระบุสินค้า";
+    nameCell.textContent = product.displayName || product.name || "(ยังไม่มีชื่อสินค้า)";
     nameCell.title = nameCell.textContent;
     row.appendChild(nameCell);
 
-    const inputCell = document.createElement("td");
-    const input = document.createElement("input");
-    input.className = "cost-input";
-    input.type = "number";
-    input.min = "0";
-    input.step = "0.01";
-    input.value = costMap[sku] ?? 0;
-    input.dataset.sku = sku;
-    inputCell.appendChild(input);
-    row.appendChild(inputCell);
+    addCell(row, formatNumber(costMap[sku] ?? 0), "number");
 
     const buttonCell = document.createElement("td");
-    const button = document.createElement("button");
-    button.className = "cost-save";
-    button.type = "button";
-    button.textContent = "บันทึก";
-    button.addEventListener("click", () => saveCost(sku, input));
-    buttonCell.appendChild(button);
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.textContent = "แก้ไข";
+    editButton.addEventListener("click", () => openProductDialog(sku));
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.textContent = "ลบ";
+    deleteButton.addEventListener("click", () => deleteProduct(sku));
+    actions.append(editButton, deleteButton);
+    buttonCell.appendChild(actions);
     row.appendChild(buttonCell);
     costTable.appendChild(row);
   }
@@ -388,6 +507,7 @@ function buildYearFilter() {
     option.textContent = year;
     yearFilter.appendChild(option);
   }
+  yearFilter.value = years.includes("2026") ? "2026" : "";
 }
 
 function renderSummary() {
@@ -436,6 +556,7 @@ function applyFilter() {
     year: yearFilter.value,
     month: monthFilter.value,
   });
+  filteredOrders = sortOrders(filteredOrders, sortSelect.value);
   renderOrders();
   renderSummary();
 }
@@ -448,8 +569,8 @@ async function loadCosts() {
     const data = document.data();
     nextCostMap[document.id] = toNumber(data.cost);
     nextProductMap[document.id] = {
-      name: String(data.name ?? "ไม่ระบุสินค้า"),
-      displayName: String(data.displayName ?? data.name ?? "ไม่ระบุสินค้า"),
+      name: String(data.name ?? ""),
+      displayName: String(data.displayName ?? data.name ?? ""),
       cost: nextCostMap[document.id],
     };
   });
@@ -460,7 +581,10 @@ async function loadCosts() {
 
 async function loadOrders() {
   const snapshot = await db.collection("orders").get();
-  orders = snapshot.docs.map((document) => normalizeOrder(document.data()));
+  orders = snapshot.docs.map((document) => normalizeOrder({
+    ...document.data(),
+    docId: document.id,
+  }));
   buildYearFilter();
   applyFilter();
 }
@@ -534,15 +658,25 @@ function readWorkbook(file) {
 }
 
 async function saveProducts(products) {
-  for (const [sku, product] of Object.entries(products)) {
-    const fullName = String(product.displayName || product.name || "ไม่ระบุสินค้า");
-    const payload = { name: fullName };
-    if (!(sku in costMap)) {
-      payload.cost = 0;
-      costMap[sku] = 0;
-    }
-    await db.collection("products").doc(sku).set(payload, { merge: true });
-    productMap[sku] = { name: fullName, displayName: fullName, cost: costMap[sku] };
+  const writes = Object.entries(products)
+    .map(([sku, product]) => {
+      const fullName = String(product.displayName || product.name || "").trim();
+      const value = sku in costMap ? costMap[sku] : 0;
+      return { sku, fullName, value };
+    })
+    .filter(({ fullName }) => fullName);
+
+  for (let start = 0; start < writes.length; start += 400) {
+    const batch = db.batch();
+    writes.slice(start, start + 400).forEach(({ sku, fullName, value }) => {
+      batch.set(db.collection("products").doc(sku), {
+        name: fullName,
+        cost: value,
+      }, { merge: true });
+      costMap[sku] = value;
+      productMap[sku] = { name: fullName, displayName: fullName, cost: value };
+    });
+    await batch.commit();
   }
 }
 
@@ -553,37 +687,152 @@ function orderDocumentId(orderId) {
 async function saveOrders(newOrders) {
   const references = newOrders.map((order) => ({
     order,
-    reference: db.collection("orders").doc(orderDocumentId(order.oid)),
+    orderId: order.oid || order.orderId,
+    reference: db.collection("orders").doc(orderDocumentId(order.oid || order.orderId)),
   }));
   const existingIds = new Set();
   for (let start = 0; start < references.length; start += 100) {
     const chunk = references.slice(start, start + 100);
     const snapshots = await Promise.all(chunk.map(({ reference }) => reference.get()));
     snapshots.forEach((snapshot, index) => {
-      if (snapshot.exists) existingIds.add(chunk[index].order.oid);
+      if (snapshot.exists) existingIds.add(chunk[index].orderId);
     });
   }
 
-  const pending = references.filter(({ order }) => !existingIds.has(order.oid));
+  const pending = references.filter(({ orderId }) => !existingIds.has(orderId));
   for (let start = 0; start < pending.length; start += 400) {
     const batch = db.batch();
     pending.slice(start, start + 400).forEach(({ order, reference }) => {
-      batch.set(reference, {
-        orderId: order.oid,
-        date: order.date,
-        month: order.month,
-        gross: order.gross,
-        cost: order.cost,
-        fee: order.fee,
-        profit: order.profit,
-        percent: order.percent,
-        items: order.items,
-        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-      });
+      batch.set(reference, orderPayload(order, true));
     });
     await batch.commit();
   }
   return { saved: pending.length, skipped: existingIds.size };
+}
+
+function orderPayload(order, includeCreatedAt = false) {
+  const payload = {
+    orderId: order.orderId || order.oid,
+    date: order.date,
+    month: order.month,
+    gross: order.gross,
+    cost: order.cost,
+    fee: order.fee,
+    profit: order.profit,
+    percent: order.percent,
+    items: order.items,
+    lineItems: Array.isArray(order.lineItems) ? order.lineItems : [],
+  };
+  if (includeCreatedAt) {
+    payload.createdAt = window.firebase.firestore.FieldValue.serverTimestamp();
+  }
+  return payload;
+}
+
+async function deleteAllOrders() {
+  const snapshot = await db.collection("orders").get();
+  for (let start = 0; start < snapshot.docs.length; start += 400) {
+    const batch = db.batch();
+    snapshot.docs.slice(start, start + 400).forEach((document) => batch.delete(document.ref));
+    await batch.commit();
+  }
+  return snapshot.docs.length;
+}
+
+function closeDialog(dialog) {
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.classList.add("hidden");
+}
+
+function openDialog(dialog) {
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.classList.remove("hidden");
+}
+
+function renderImportPreview() {
+  if (!pendingImport) return;
+  const { files, rawRows, result, selectedOrders } = pendingImport;
+  const dates = selectedOrders.map((order) => order.date).filter(Boolean).sort();
+  const unknown = selectedOrders.filter((order) => !order.lineItems?.length).length;
+  const excluded = result.orders.length - selectedOrders.length;
+  importFiles.textContent = `ไฟล์: ${files.join(", ")}`;
+  importPreviewGrid.replaceChildren();
+  [
+    ["แถวข้อมูลที่อ่านได้", rawRows],
+    ["คำสั่งซื้อทั้งหมดในไฟล์", result.orders.length],
+    ["คำสั่งซื้อปี 2026 ที่จะนำเข้า", selectedOrders.length],
+    ["รายการเก่าที่ตัดออก", excluded],
+    ["ยังจับคู่รายละเอียดสินค้าไม่ได้", unknown],
+    ["ช่วงวันที่ปี 2026", dates.length ? `${dates[0]} ถึง ${dates.at(-1)}` : "ไม่มี"],
+  ].forEach(([label, value]) => {
+    const block = document.createElement("div");
+    const labelNode = document.createElement("span");
+    labelNode.className = "muted";
+    labelNode.textContent = label;
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = String(value);
+    block.append(labelNode, valueNode);
+    importPreviewGrid.appendChild(block);
+  });
+  importNote.textContent = unknown
+    ? `พบ ${unknown} ออเดอร์ที่ยังไม่มีชื่อสินค้า/รายการสินค้าในไฟล์นี้ จึงคำนวณต้นทุนเป็น 0 จนกว่าจะอัปโหลดไฟล์ Orders ที่มีรายละเอียดสินค้า หรือเพิ่มข้อมูลในหน้า Cost`
+    : "ข้อมูลปี 2026 พร้อมนำเข้าและคำนวณต้นทุนจากรายการสินค้าแล้ว";
+  backupStatus.textContent = orders.length
+    ? (backupReady ? "✅ ดาวน์โหลด Backup แล้ว สามารถใช้คำสั่งล้างข้อมูลเดิมได้" : "ต้องดาวน์โหลด Backup ก่อนใช้คำสั่งล้างข้อมูลเดิม")
+    : "ไม่มี Orders เดิม จึงไม่จำเป็นต้องสร้าง Backup ก่อนนำเข้า";
+  downloadBackupButton.disabled = !orders.length;
+  replaceImportButton.disabled = Boolean(orders.length && !backupReady);
+  appendImportButton.disabled = !selectedOrders.length;
+}
+
+function downloadBackup() {
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    orders: orders.map(({ docId, createdAt, ...order }) => order),
+    products: productMap,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `shopee-profit-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  backupReady = true;
+  renderImportPreview();
+  setStatus("✅ ดาวน์โหลด Backup ข้อมูลเดิมแล้ว");
+}
+
+async function commitPendingImport(replaceExisting = false) {
+  if (!pendingImport?.selectedOrders.length) return;
+  if (replaceExisting && orders.length && !backupReady) {
+    setStatus("❌ กรุณาดาวน์โหลด Backup ก่อนล้างรายการเดิม", true);
+    return;
+  }
+
+  appendImportButton.disabled = true;
+  replaceImportButton.disabled = true;
+  downloadBackupButton.disabled = true;
+  try {
+    const selectedOrders = pendingImport.selectedOrders;
+    await saveProducts(pendingImport.result.products);
+    let deleted = 0;
+    if (replaceExisting) deleted = await deleteAllOrders();
+    const outcome = await saveOrders(selectedOrders);
+    pendingImport = null;
+    backupReady = false;
+    closeDialog(importDialog);
+    await loadCosts();
+    await loadOrders();
+    setStatus(`✅ นำเข้าปี 2026 แล้ว ${outcome.saved} รายการ | ข้ามซ้ำ ${outcome.skipped}${replaceExisting ? ` | ลบข้อมูลเดิม ${deleted} รายการ` : ""}`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`❌ บันทึกข้อมูลนำเข้าไม่สำเร็จ: ${explainFirebaseError(error)}`, true);
+    renderImportPreview();
+  } finally {
+    fileInput.disabled = false;
+  }
 }
 
 async function uploadFiles(event) {
@@ -593,6 +842,10 @@ async function uploadFiles(event) {
   fileInput.disabled = true;
   try {
     await loadCosts();
+    const orderRows = [];
+    const incomeRows = [];
+    const validFiles = [];
+    let rawRows = 0;
     for (const file of files) {
       setStatus(`📄 กำลังอ่านไฟล์ ${file.name}...`);
       const parsed = await readWorkbook(file);
@@ -604,26 +857,33 @@ async function uploadFiles(event) {
         continue;
       }
 
-      const result = aggregateRows(parsed.rows, costMap);
-      if (!result.orders.length) {
-        setStatus(`❌ ${file.name}: ไม่พบหมายเลขคำสั่งซื้อที่ใช้ได้`, true);
-        continue;
-      }
-      await saveProducts(result.products);
-      const outcome = await saveOrders(result.orders);
-      const note = parsed.profile === "income" && !Object.keys(result.products).length
-        ? " | ไฟล์ Income ไม่มีชื่อสินค้า ใช้ไฟล์ Orders เพื่อเติมชื่อใน Cost"
-        : "";
-      setStatus(`✅ ${file.name}: บันทึก ${outcome.saved} | ข้ามซ้ำ ${outcome.skipped}${note}`);
+      rawRows += parsed.rows.length;
+      validFiles.push(file.name);
+      (parsed.profile === "income" ? incomeRows : orderRows).push(...parsed.rows);
     }
-    await loadCosts();
-    await loadOrders();
+    if (!rawRows) return;
+
+    const result = mergeImportResults(
+      aggregateRows(orderRows, costMap),
+      aggregateRows(incomeRows, costMap),
+      costMap,
+    );
+    const selectedOrders = filterOrders(result.orders.map(normalizeOrder), { year: "2026" });
+    if (!selectedOrders.length) {
+      setStatus("❌ ไฟล์ที่เลือกไม่มีรายการปี 2026 ที่นำเข้าได้", true);
+      return;
+    }
+    pendingImport = { files: validFiles, rawRows, result, selectedOrders };
+    backupReady = orders.length === 0;
+    renderImportPreview();
+    openDialog(importDialog);
+    setStatus("🔎 ตรวจสอบตัวอย่างข้อมูลก่อนบันทึก");
   } catch (error) {
     console.error(error);
     setStatus(`❌ Upload ล้มเหลว: ${explainFirebaseError(error)}`, true);
   } finally {
-    fileInput.disabled = false;
     fileInput.value = "";
+    if (!pendingImport) fileInput.disabled = false;
   }
 }
 
@@ -669,6 +929,7 @@ async function exportPdf() {
   const report = buildReportModel(orders, {
     year: yearFilter.value,
     month: monthFilter.value,
+    sort: sortSelect.value,
   });
   if (!report.orders.length) {
     setStatus("❌ ยังไม่มีข้อมูลสำหรับ Export PDF", true);
@@ -709,25 +970,92 @@ async function exportPdf() {
   }
 }
 
-async function saveCost(sku, input) {
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value < 0 || value > 1000000000) {
-    setStatus("❌ ต้นทุนต้องเป็นตัวเลขตั้งแต่ 0 ถึง 1,000,000,000", true);
+function showProductFormError(message = "") {
+  productFormError.textContent = message;
+  productFormError.classList.toggle("hidden", !message);
+}
+
+function openProductDialog(sku = "") {
+  const product = productMap[sku] || {};
+  productForm.dataset.originalSku = sku;
+  productDialogTitle.textContent = sku ? "แก้ไขรายการต้นทุน" : "เพิ่มรายการต้นทุน";
+  productSku.value = sku;
+  productSku.readOnly = Boolean(sku);
+  productName.value = product.displayName || product.name || "";
+  productCost.value = String(costMap[sku] ?? 0);
+  showProductFormError();
+  openDialog(productDialog);
+  productName.focus();
+}
+
+async function recalculateLoadedOrdersForProduct(sku) {
+  const affected = orders.filter((order) => (
+    Array.isArray(order.lineItems) && order.lineItems.some((item) => item.sku === sku)
+  ));
+  if (!affected.length) return 0;
+
+  const recalculated = affected.map((order) => recalculateOrder(order, costMap));
+  for (let start = 0; start < recalculated.length; start += 400) {
+    const batch = db.batch();
+    recalculated.slice(start, start + 400).forEach((order) => {
+      const reference = db.collection("orders").doc(order.docId || orderDocumentId(order.orderId));
+      batch.update(reference, orderPayload(order));
+    });
+    await batch.commit();
+  }
+
+  const byId = new Map(recalculated.map((order) => [order.orderId, order]));
+  orders = orders.map((order) => byId.get(order.orderId) || order);
+  buildYearFilter();
+  applyFilter();
+  return recalculated.length;
+}
+
+async function saveProductForm(event) {
+  event.preventDefault();
+  const sku = productSku.value.trim();
+  const name = productName.value.trim();
+  const cost = Number(productCost.value);
+  const originalSku = productForm.dataset.originalSku || "";
+  const validation = validateProduct({ sku, name, cost });
+  if (!validation.valid) {
+    showProductFormError("กรุณาตรวจสอบ SKU, ชื่อสินค้า และต้นทุน (SKU ห้ามมี / และต้นทุนต้องอยู่ระหว่าง 0 ถึง 1,000,000,000)");
+    return;
+  }
+  if (!originalSku && productMap[sku]) {
+    showProductFormError("SKU นี้มีอยู่แล้ว กรุณาใช้ปุ่มแก้ไขรายการเดิม");
     return;
   }
 
   try {
-    const product = productMap[sku] || { name: "ไม่ระบุสินค้า" };
-    await db.collection("products").doc(sku).set({
-      name: product.name,
-      cost: value,
-    }, { merge: true });
-    costMap[sku] = value;
-    productMap[sku] = { ...product, displayName: product.displayName || product.name, cost: value };
-    setStatus("✅ บันทึกต้นทุนแล้ว");
+    await db.collection("products").doc(sku).set({ name, cost }, { merge: true });
+    costMap[sku] = cost;
+    productMap[sku] = { name, displayName: name, cost };
+    const changedOrders = await recalculateLoadedOrdersForProduct(sku);
+    closeDialog(productDialog);
+    renderCost();
+    setStatus(`✅ บันทึกรายการต้นทุนแล้ว${changedOrders ? ` | ปรับกำไร ${changedOrders} ออเดอร์` : ""}`);
   } catch (error) {
     console.error(error);
-    setStatus(`❌ บันทึกต้นทุนไม่สำเร็จ: ${explainFirebaseError(error)}`, true);
+    showProductFormError(`บันทึกไม่สำเร็จ: ${explainFirebaseError(error)}`);
+  }
+}
+
+async function deleteProduct(sku) {
+  const product = productMap[sku];
+  const name = product?.displayName || product?.name || sku;
+  if (!window.confirm(`ต้องการลบรายการต้นทุน “${name}” ใช่หรือไม่? ออเดอร์ที่ผูกกับ SKU นี้จะถูกคำนวณต้นทุนเป็น 0`)) return;
+
+  try {
+    await db.collection("products").doc(sku).delete();
+    delete costMap[sku];
+    delete productMap[sku];
+    const changedOrders = await recalculateLoadedOrdersForProduct(sku);
+    renderCost();
+    setStatus(`✅ ลบรายการต้นทุนแล้ว${changedOrders ? ` | ปรับกำไร ${changedOrders} ออเดอร์` : ""}`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`❌ ลบรายการต้นทุนไม่สำเร็จ: ${explainFirebaseError(error)}`, true);
   }
 }
 
@@ -775,6 +1103,35 @@ fileInput.addEventListener("change", uploadFiles);
 exportPdfButton.addEventListener("click", exportPdf);
 yearFilter.addEventListener("change", applyFilter);
 monthFilter.addEventListener("change", applyFilter);
+sortSelect.addEventListener("change", () => {
+  sortMode = sortSelect.value;
+  applyFilter();
+});
+costSearch.addEventListener("input", renderCost);
+costFilter.addEventListener("change", renderCost);
+addProductButton.addEventListener("click", () => openProductDialog());
+cancelProductButton.addEventListener("click", () => closeDialog(productDialog));
+productForm.addEventListener("submit", saveProductForm);
+downloadBackupButton.addEventListener("click", downloadBackup);
+appendImportButton.addEventListener("click", () => commitPendingImport(false));
+replaceImportButton.addEventListener("click", () => {
+  if (orders.length && !window.confirm(`ระบบจะลบ Orders เดิม ${orders.length} รายการ แล้วใช้ข้อมูลปี 2026 จำนวน ${pendingImport?.selectedOrders.length || 0} รายการ คุณต้องการดำเนินการต่อหรือไม่?`)) return;
+  commitPendingImport(true);
+});
+cancelImportButton.addEventListener("click", () => {
+  pendingImport = null;
+  backupReady = false;
+  closeDialog(importDialog);
+  fileInput.disabled = false;
+  setStatus("ยกเลิกการนำเข้าแล้ว");
+});
+importDialog.addEventListener("close", () => {
+  if (pendingImport) {
+    pendingImport = null;
+    backupReady = false;
+    fileInput.disabled = false;
+  }
+});
 document.querySelectorAll("[data-tab]").forEach((button) => {
   button.addEventListener("click", () => showTab(button.dataset.tab));
 });
